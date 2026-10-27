@@ -55,7 +55,7 @@
 
 #if LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN
 /** Size of the pool `lv_malloc()` allocates from. Needs to be at least 2kB (2048). */
-#define LV_MEM_SIZE (1024 * 1024)
+#define LV_MEM_SIZE (8 * 1024 * 1024)
 
 /** Place the pool at a fixed address instead of allocating it as a normal array.
  *  0: unused.
@@ -211,7 +211,7 @@
 #define LV_USE_VECTOR_GRAPHIC 1
 
 /** Render a widget and its children into an image buffer with lv_snapshot_take(). */
-#define LV_USE_SNAPSHOT 0
+#define LV_USE_SNAPSHOT 1
 
 /** Backend that gives the SW renderer vector graphics support. */
 #define LV_USE_THORVG 1

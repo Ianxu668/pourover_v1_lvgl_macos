@@ -69,7 +69,7 @@ add_compile_definitions($<$<BOOL:${LV_USE_FFMPEG}>:LV_USE_FFMPEG=1>)
 add_subdirectory(lvgl)
 target_include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR} ${SDL2_INCLUDE_DIRS})
 
-set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c)
+set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c src/simulator_preferences.c)
 set(MAIN_LIBS lvgl lvgl::examples lvgl::demos lvgl::thorvg ${SDL2_LIBRARIES})
 
 # Create the main executable, depending on the FreeRTOS option
@@ -122,28 +122,55 @@ if(LV_USE_FREETYPE)
     list(APPEND MAIN_LIBS ${FREETYPE_LIBRARIES})
 endif()
 
+include(CTest)
+
+set(PRODUCT_UI_SOURCE_DIR "${PROJECT_SOURCE_DIR}/ui")
 if(LVGL_PRO_PROJECT_DIR)
   if(EXISTS "${LVGL_PRO_PROJECT_DIR}/CMakeLists.txt")
-    add_subdirectory(${LVGL_PRO_PROJECT_DIR} ui)
-    list(APPEND MAIN_LIBS lib-ui)
-
-    target_compile_definitions(lib-ui PUBLIC LV_LVGL_H_INCLUDE_SIMPLE)
-    target_include_directories(lib-ui PUBLIC
-      ${LVGL_PRO_PROJECT_DIR}  # local headers like ui.h, generated files, etc.
-      ${CMAKE_SOURCE_DIR}/lvgl # include "lvgl.h" works
-    )
-    message(STATUS "LVGL Pro Project enabled from: ${LVGL_PRO_PROJECT_DIR}")
+    get_filename_component(PRODUCT_UI_SOURCE_DIR "${LVGL_PRO_PROJECT_DIR}" ABSOLUTE)
+    message(STATUS "Using LVGL Pro project from: ${PRODUCT_UI_SOURCE_DIR}")
   else()
-    message(
-      WARNING
-        "LVGL_PRO_PROJECT_DIR specified but no CMakeLists.txt found at: ${LVGL_PRO_PROJECT_DIR}"
-    )
+    message(WARNING
+      "LVGL_PRO_PROJECT_DIR specified but no CMakeLists.txt found at: ${LVGL_PRO_PROJECT_DIR}; using ui submodule")
   endif()
 endif()
 
+if(NOT EXISTS "${PRODUCT_UI_SOURCE_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR "Product UI CMake project not found at ${PRODUCT_UI_SOURCE_DIR}; initialize the ui submodule or set LVGL_PRO_PROJECT_DIR")
+endif()
+if(PRODUCT_UI_SOURCE_DIR STREQUAL "${PROJECT_SOURCE_DIR}/ui")
+  add_subdirectory(ui product-ui)
+else()
+  add_subdirectory("${PRODUCT_UI_SOURCE_DIR}" product-ui)
+endif()
+if(NOT TARGET lib-ui)
+  message(FATAL_ERROR "The product UI project must define the lib-ui target")
+endif()
+list(APPEND MAIN_LIBS lib-ui)
+target_compile_definitions(lib-ui PUBLIC LV_LVGL_H_INCLUDE_SIMPLE)
+target_include_directories(lib-ui PUBLIC
+  "${PRODUCT_UI_SOURCE_DIR}"
+  "${PRODUCT_UI_SOURCE_DIR}/include"
+  "${PROJECT_SOURCE_DIR}/lvgl"
+)
+
 add_executable(main ${MAIN_SOURCES})
 target_compile_definitions(main PRIVATE LV_CONF_INCLUDE_SIMPLE)
+target_include_directories(main PRIVATE
+  "${PRODUCT_UI_SOURCE_DIR}"
+  "${PRODUCT_UI_SOURCE_DIR}/include"
+)
 target_link_libraries(main ${MAIN_LIBS})
+
+if(BUILD_TESTING AND UNIX)
+  add_executable(simulator_preferences_test src/simulator_preferences.c)
+  target_compile_definitions(simulator_preferences_test PRIVATE SIMULATOR_PREFERENCES_TEST)
+  target_include_directories(simulator_preferences_test PRIVATE
+    "${PROJECT_SOURCE_DIR}/src"
+    "${PRODUCT_UI_SOURCE_DIR}/include"
+  )
+  add_test(NAME simulator_preferences COMMAND simulator_preferences_test)
+endif()
 
 # On Windows, GUI applications do not show a console by default,
 # which hides log output. This ensures a console is available for logging.

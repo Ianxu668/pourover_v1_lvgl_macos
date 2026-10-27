@@ -7,9 +7,9 @@
 - 产品 UI：`ui/` 子模块，私有仓库 `Ianxu668/pourover_ui`。
 - 固件：独立的 `pour_over_scale_v2`，本次未接入 UI 子模块、未修改源码或 SDK。
 
-当前仍运行官方 Widgets Demo。UI 仓库暂不包含页面；待页面提取完成，再添加 UI 构建目标并替换 Demo 入口，不维护两套页面实现。
+模拟器根工程默认通过 `add_subdirectory(ui product-ui)` 构建 UI 子模块的 `lib-ui`，入口显示产品 Boot 和首次语言设置页；页面实现与静态资源只维护在 UI 私有仓库。首次运行或偏好无效时，模拟器以英语启动语言设置页（Boot 预览延迟 1500 ms，仅为桌面流程，不是硬件时序）。有效偏好会被读取并跳过语言页；由于下一产品页尚未集成，模拟器继续停留在 Boot，不自行补造 Home 页面。
 
-产品页面、样式、字体、图片应保存在 UI 私有仓库。SDL、模拟数据留在模拟器；真实传感器、电源、RTOS、显示/触摸驱动留在固件。不要把产品源码或私密数据提交到公开的模拟器/LVGL Fork。
+产品页面、样式、字体、图片应保存在 UI 私有仓库。SDL、模拟数据留在模拟器；真实传感器、电源、RTOS、显示/触摸驱动留在固件。不要把产品源码、私有设计或资源提交到公开的模拟器/LVGL Fork。
 
 ## 另一台 Mac 首次准备
 
@@ -37,10 +37,27 @@ cmake -S . -B build -G Ninja \
   -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
   -DUSE_FREERTOS=OFF
 cmake --build build --parallel 8
+ctest --test-dir build --output-on-failure
 ./bin/main
 ```
 
-`build/`、`bin/` 不提交或跨电脑复制。每台电脑独立配置；切换编译器时使用新的构建目录。
+预览及截图示例：
+
+```sh
+./bin/main --screen boot
+./bin/main --screen language --language ja
+./bin/main --screen language --screenshot /tmp/language.ppm
+```
+
+模拟器将确认后的语言保存到 SDL 的 `Mistro/PourOverScale` 偏好目录；命令行 `--language` 只提供临时初始选择。默认 UI 由私有 `ui/` 子模块提供。如需用兼容的 LVGL Pro 工程替代该子模块，可设置 `-DLVGL_PRO_PROJECT_DIR=<path>`；指定工程需提供 `lib-ui` target 及相同的 `pourover_ui.h` 启动接口。`build/`、`bin/` 不提交或跨电脑复制。每台电脑独立配置；切换编译器时使用新的构建目录。
+
+## FreeRTOS 可选模式（保留上游说明）
+
+当前产品开机/语言流程只验证了 `USE_FREERTOS=OFF`。工程仍保留上游 FreeRTOS 示例入口；它不是本阶段产品流程，不代表 BK7258 固件的 RTOS 集成。
+
+上游启用条件是将 `lv_conf.h` 的 `LV_USE_OS` 改为 `LV_OS_FREERTOS`，并在独立构建目录配置 `-DUSE_FREERTOS=ON`；关闭时两处都恢复，不能只切一个开关。相关宿主配置位于 `config/FreeRTOSConfig.h`。上游曾建议为 POSIX/SDL 示例配置 **512 MiB** 的 `configTOTAL_HEAP_SIZE`，以避免堆不足或窗口出现缓慢；这是桌面示例的经验配置，不是产品 RAM 要求，也不用于普通 SDL 模式。
+
+此模式未做本次 macOS/LLVM 编译或运行验证；不要把保留的选项当作已支持的产品启动方式。
 
 ## 日常同步
 

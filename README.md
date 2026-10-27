@@ -1,195 +1,54 @@
-# VSCode Simulator project for LVGL
+# PourOver Scale macOS LVGL simulator
 
-## Product development fork
+This repository is the desktop simulator for the PourOver Scale UI. Work on branch `product/macos-v9.6`; clone with submodules because the product UI is in the private `ui/` repository. The simulator integrates the UI's `lib-ui` target and currently provides the boot and first-run language screens; it does not invent a home screen that is not yet integrated.
 
-Use branch `product/macos-v9.6` for this product. Clone with `--recurse-submodules`; access to the private `ui/` repository is required. The simulator still runs the official Widgets Demo until product pages are integrated.
+For setup and safe UI/submodule synchronization, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-See [产品 UI 开发与双电脑同步](docs/DEVELOPMENT.md) for the macOS LLVM build, repository layout, and Git workflow.
+## Build and run
 
-[LVGL](https://github.com/lvgl/lvgl) is written mainly for microcontrollers and embedded systems, however you can run the library **on your PC** as well without any embedded hardware. The code written on PC can be simply copied when your are using an embedded system.
+Install Xcode Command Line Tools, Homebrew LLVM, CMake, Ninja, and SDL2. Clone with access to the private UI repository, then configure and build:
 
-This project is pre-configured for VSCode and should work work on Windows, Linux and MacOs as well. FreeRTOS is also included and can be optionally enabled to better simulate embedded system's behavior. 
-
-## Get started
-
-### Install SDL and the build tools
-
-- **Windows (vcpkg):** `vcpkg install sdl2`  (`vcpkg` can be installed from [https://github.com/microsoft/vcpkg](https://github.com/microsoft/vcpkg)) Also install either MinGW or another compiler and `cmake`.
-- **macOS (Homebrew):** `brew install sdl2 cmake make`  
-- **Linux:**  
-  - **Debian/Ubuntu:** `sudo apt install build-essential cmake libsdl2-dev`  
-  - **Arch:** `sudo pacman -S base-devel cmake sdl2`  
-  - **Fedora:** `sudo dnf install @development-tools cmake SDL2-devel`  
-- **Manual Installation of SDL:** Download from [SDL’s website](https://github.com/libsdl-org/SDL/releases) and place headers/libraries in your project.
-- **Verify Installation:** `sdl2-config --version`, `cmake --version`, `gcc --version`, `g++ --version` (should return the installed version).  
-
-### Get the PC project
-
-Clone the PC project and the related sub modules:
-
-```bash
-git clone --recursive https://github.com/lvgl/lv_port_pc_vscode
+```sh
+git clone --recurse-submodules --branch product/macos-v9.6 \
+  https://github.com/Ianxu668/pourover_v1_lvgl_macos.git
+cd pourover_v1_lvgl_macos
+brew install llvm cmake ninja sdl2
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="$(brew --prefix llvm)/bin/clang" \
+  -DCMAKE_CXX_COMPILER="$(brew --prefix llvm)/bin/clang++" \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
+  -DUSE_FREERTOS=OFF
+cmake --build build --parallel 8
+ctest --test-dir build --output-on-failure
+./bin/main
 ```
 
-## Usage
+To build against a different LVGL Pro project, set `LVGL_PRO_PROJECT_DIR`; it is used instead of the default `ui/` submodule and must define the `lib-ui` target **and implement the same `pourover_ui.h` startup API** (an arbitrary LVGL Pro export is not sufficient):
 
-### Visual Studio Code
-
-1. Be sure you have installed [SDL and the build tools](#install-sdl-and-the-build-tools)
-2. Open the project by double clicking on `simulator.code-workspace` or opening it with `File/Open Workspace from File`
-3. Install the recommended plugins
-4. Click the Run and Debug page on the left, and select `Debug LVGL demo with gdb` from the drop-down on the top. Like this:
-![image](https://github.com/lvgl/lv_port_pc_vscode/assets/7599318/f527b235-5718-4949-b5f0-bd807b3a64ba)
-5. Click the Play button or hit F5 to start debugging.
-
-#### ArchLinux User
-
-VSCode does not officially provide an installation package under Arch, you need to use the AUR manager `paru` to install it.
-The command is as follows:
-
-```bash
-paru -S visual-studio-code-bin
+```sh
+cmake -S . -B build -DLVGL_PRO_PROJECT_DIR=/path/to/ui-project
 ```
 
-#### macOS
+`simulator_preferences` currently stores only the selected language, not window size or position. The simulator reads and saves the selected locale as `language` under SDL's `Mistro/PourOverScale` preference directory. A valid saved locale is loaded before the UI starts. With no valid preference, the simulator shows boot for a 1500 ms **host preview delay**, then opens language setup in English. That delay is not a hardware timing requirement. With a valid saved locale the simulator remains on boot, since the next product screen is not defined here.
 
-Apple's default clang does not support the `-fsanitize=leak` flag.
+Useful preview and capture commands:
 
-to build using the latest version of clang from homebrew, do the following:
-
-1. `brew install llvm`
-
-2. cmd+shift+p and run `Cmake: select a kit`, then `[Scan for kits]`
-
-3. then cmd+shift+p and run `Cmake: select a kit`, select the version of clang you just installed from homebrew (it should say `Using compilers C=/opt/homebrew/opt/llvm/bin/clang ...`)
-
-4. reconfigure by running cmd+shift+p `Cmake: Configure`
-
-5. build using [step 4 above](#visual-studio-code)
-
-### FreeRTOS configuration
-To correctly configure the project, the RTOS (Real-Time Operating System) requires a significant amount of heap memory, especially when debugging an SDL (Simple DirectMedia Layer) window application. In this project, the heap memory has been experimentally set to **512 MB**.
-
-```c
-#define configTOTAL_HEAP_SIZE ( ( size_t ) ( 512 * 1024 * 1024 ) )  // 512 MB Heap
-```
-This configuration ensures that the SDL window is displayed in a timely manner. If this value is reduced, it may cause significant delays in the SDL window's appearance. If the allocated heap memory is too small, the window may fail to appear altogether.
-Therefore, it is crucial to allocate sufficient heap memory to ensure smooth execution and debugging experience.
-
-### Enable FreeRTOS 
-To enable the rtos part of this project select in lv_conf.h `#define LV_USE_OS   LV_OS_NONE` to `#define LV_USE_OS  LV_OS_FREERTOS`
-Additionaly you have to enable the compilation of all FreeRTOS Files by turning on the `option(USE_FREERTOS "Enable FreeRTOS" OFF)` in the CMakeLists.txt file or
-by enabling the same flag from the command line when bootstrapping `cmake`:
-
-```bash
-cmake -B build -DUSE_FREERTOS=ON
+```sh
+./bin/main --screen boot
+./bin/main --screen language
+./bin/main --screen language --language zh-Hans
+./bin/main --screenshot /tmp/pourover-language.ppm --screen language --language ja
 ```
 
-### CMake
+`--screen boot` holds the boot screen. `--screen language` opens the language screen even when a preference exists, without clearing or rewriting it. `--language` accepts `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`, `de`, or `es` and sets only the temporary initial choice; language is saved only when the UI's Continue action confirms it. `--screenshot` writes a binary PPM (`P6`) image of the rendered screen and exits; it is useful for automated capture where the SDL backend can initialize.
 
-This project uses CMake under the hood which can be used without Visula Studio Code too. Just type these in a Terminal when you are in the project's root folder:
+## Simulator and device context
 
-```bash
-mkdir build
-cd build
-cmake ..
-make -j
-```
+The simulator uses LVGL 9.6 with the SDL software renderer and RGB565 display format. It renders the device's logical landscape canvas at **960 × 376 pixels**, without desktop DPI scaling or canvas rotation. The device display scans at 376 × 960 pixels and is specified at 360 PPI, approximately 67.68 × 26.51 mm in landscape. The display is HD286001C40, the touch controller is CST3240, and the target SoC is BK7258 AP/CP. The firmware uses a fixed Armino SDK revision (`398cab28b938e69ba2071a597daf00845dd080b6`); it was previously on LVGL 9.3 and its migration to 9.6 is in progress, not hardware-verified here.
 
-## Run demos and examples
+The design source is `PourOverScale_UI.pen`, accessed through Pencil MCP. Implemented references are **`VDHEl`** (boot), **`ow8fm`** (snapped language choice), and **`s6OG7D`** (dragging); the latter two are states of the same page, not separate navigation destinations.
 
-By default, the widgets demo (`lv_demo_widgets()`) will run. If you want to run a different demo or example from the LVGL library,
-simply replace the demo function call in the code with another one—such as `lv_demo_benchmark()` or `lv_example_label_1()`.
+The current Boot and P02 language screens follow the v0.6 interaction contract and Mistro Ink/Frost visual palette (spec 16 v1.1). P02 offers eight locales in API order: English, Simplified Chinese, Traditional Chinese, Japanese, Korean, French, German, and Spanish. Scrolling and choosing a language are previews; the localized panel updates after the selection settles, and releasing a drag does not confirm. Only Continue saves the selection. A 114-pixel touch reference corresponds to about 8 mm on the device, but is not a universal target-size rule.
 
-```c
-int main(int argc, char **argv)
-{
-  /* ... */
-  /* Run the default demo */
-  /* To try a different demo or example, replace this with one of: */
-  /* - lv_demo_benchmark(); */
-  /* - lv_demo_stress(); */
-  /* - lv_example_label_1(); */
-  /* - etc. */
-  lv_demo_widgets(); 
-
-  while(1) {
-      /* ... */
-  }
-  return 0;
-}
-```
-
-## Optional library
-
-There are also FreeType and FFmpeg support. You can install these according to the followings:
-
-### Linux
-
-```bash
-# FreeType support
-wget https://kumisystems.dl.sourceforge.net/project/freetype/freetype2/2.13.2/freetype-2.13.2.tar.xz
-tar -xf freetype-2.13.2.tar.xz
-cd freetype-2.13.2
-make
-make install
-```
-
-```bash
-# FFmpeg support
-git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
-cd ffmpeg
-git checkout release/6.0
-./configure --disable-all --disable-autodetect --disable-podpages --disable-asm --enable-avcodec --enable-avformat --enable-decoders --enable-encoders --enable-demuxers --enable-parsers --enable-protocol='file' --enable-swscale --enable-zlib
-make
-sudo make install
-```
-### (RT)OS support
-Works with any OS like pthred, Windows, FreeRTOS, etc. It has build in support for FreeRTOS. 
-
-## Test
-This project is configured for [VSCode](https://code.visualstudio.com) and is tested on: 
-- Ubuntu Linux 
-- Windows WSL (Ubuntu Linux)
-
-It requires a working version of GCC, GDB and make in your path.
-
-To allow debugging inside VSCode you will also require a GDB [extension](https://marketplace.visualstudio.com/items?itemName=webfreak.debug) or other suitable debugger. All the requirements, build and debug settings have been pre-configured in the [.workspace](simulator.code-workspace) file.
-
-The project can use **SDL** but it can be easily relaced by any other built-in LVGL dirvers.
-
-## Integration with LVGL Pro
-
-This project supports integration with LVGL Pro projects for UI development.
-
-### Setup
-
-1. Configure CMake with your LVGL Pro project folder:
-
-```bash
-cmake -B build -DLVGL_PRO_PROJECT_DIR=<path-to-lvgl-pro-project>
-```
-
-Build your project:
-
-```bash
-cmake --build build
-```
-
-### Usage in Code
-
-In your main.c, include the UI header from your LVGL Pro project and replace the default demo with your screen.
-
-```c
-#include "ui.h"
-
-int main(void) {
-
-    /*Initialization code for LVGL*/
-    
-    /* Initialize the LVGL Pro UI */
-    ui_init("<path-to-lvgl-pro-project>");
-    
-    /* ... rest of your application ...*/
-}
-```
+UI artwork and page implementation belong in the private UI submodule, not this simulator repository. OPPO Sans 4 text is supplied as complete-string bitmap artwork to respect its no-modification license; Japanese and Korean Noto fallback text is rasterized as well. The simulator uses static A8 image assets rather than runtime font files. Firmware storage and on-device rendering/touch behavior still require hardware validation.
