@@ -6,23 +6,24 @@ For setup and safe UI/submodule synchronization, see [docs/DEVELOPMENT.md](docs/
 
 ## Build and run
 
-Install Xcode Command Line Tools, Homebrew LLVM, CMake, Ninja, and SDL2. Clone with access to the private UI repository, then configure and build:
+Install Xcode Command Line Tools (`xcode-select --install`) and [Homebrew](https://brew.sh), with `brew` available on `PATH`. Clone with access to the private UI repository, then use the two scripts:
 
 ```sh
 git clone --recurse-submodules --branch product/macos-v9.6 \
   https://github.com/Ianxu668/pourover_v1_lvgl_macos.git
 cd pourover_v1_lvgl_macos
-brew install llvm cmake ninja sdl2
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER="$(brew --prefix llvm)/bin/clang" \
-  -DCMAKE_CXX_COMPILER="$(brew --prefix llvm)/bin/clang++" \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
-  -DUSE_FREERTOS=OFF
-cmake --build build --parallel 8
+./setup.sh  # Install missing LLVM/CMake/Ninja/SDL2, initialize submodules, configure
+./run.sh    # Incremental build with 8 jobs, then launch bin/main
+
+# Arguments are forwarded to the simulator:
+./run.sh --screen language --language ja
+
+# Optional tests (not run on every launch):
 ctest --test-dir build --output-on-failure
-./bin/main
+sh tests/build_scripts_test.sh
 ```
+
+Both scripts work from any working directory. `setup.sh` configures `build/` as Release with Ninja, Homebrew LLVM, FreeRTOS off, and the bundled `ui/` project; it installs only missing formulae, without requesting upgrades. It initializes missing submodules at pinned revisions and stops if an initialized submodule has a different commit or a conflict; it does not force checkout or update to remote HEAD. `run.sh` requires setup first, stops if the build fails, and does not reinstall dependencies. Existing build caches are not deleted; use a separate build directory manually if changing compiler or generator.
 
 To build against a different LVGL Pro project, set `LVGL_PRO_PROJECT_DIR`; it is used instead of the default `ui/` submodule and must define the `lib-ui` target **and implement the same `pourover_ui.h` startup API** (an arbitrary LVGL Pro export is not sufficient):
 

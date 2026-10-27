@@ -21,24 +21,21 @@ git clone --recurse-submodules --branch product/macos-v9.6 \
 cd pourover_v1_lvgl_macos
 ```
 
-需要 Xcode Command Line Tools 或 Xcode，以及 Homebrew 的 LLVM、CMake、Ninja 和 SDL2。缺少依赖时安装：
+先安装 Xcode Command Line Tools（`xcode-select --install`）或 Xcode，以及 [Homebrew](https://brew.sh)，并按安装提示将 `brew` 加入 PATH。之后只需两个脚本：
 
 ```sh
-brew install llvm cmake ninja sdl2
+./setup.sh  # 首次准备环境并生成 build/，依赖变化时可重新执行
+./run.sh    # 日常增量编译并运行
+./run.sh --screen language --language ja  # 参数直接传给模拟器
 ```
 
-首次配置并构建：
+`setup.sh` 检查 macOS 和 Xcode 工具，仅安装缺失的 Homebrew LLVM、CMake、Ninja、SDL2，不主动升级已有依赖；初始化缺失的子模块（需要私有 UI 仓库权限），再使用 Ninja + Homebrew Clang 配置 Release 构建，关闭 FreeRTOS 和核心测试专用模式，使用默认 `ui/`。如果已初始化的子模块偏离父仓库锁定提交或存在冲突，脚本会停止，不强制切换本地版本。它不会清理已有构建缓存；如果旧缓存使用其他编译器或生成器，应手动使用新构建目录。
+
+`run.sh` 使用 8 个并行任务编译，成功后从项目根目录启动 `bin/main`；失败时不会运行旧产物。两个脚本都可以从任意工作目录调用，不需要 source。日常运行不重复安装依赖或执行测试，需要时单独运行：
 
 ```sh
-cmake -S . -B build -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER="$(brew --prefix llvm)/bin/clang" \
-  -DCMAKE_CXX_COMPILER="$(brew --prefix llvm)/bin/clang++" \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix)" \
-  -DUSE_FREERTOS=OFF
-cmake --build build --parallel 8
 ctest --test-dir build --output-on-failure
-./bin/main
+sh tests/build_scripts_test.sh  # 使用假工具检查脚本，不安装依赖、不打开窗口
 ```
 
 预览及截图示例：
