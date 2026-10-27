@@ -7,3 +7,6 @@
 [submodule "FreeRTOS"]
 	path = FreeRTOS
 	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+[submodule "ui"]
+	path = ui
+	url = https://github.com/Ianxu668/pourover_ui.git

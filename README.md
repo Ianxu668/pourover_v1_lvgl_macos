@@ -1,5 +1,11 @@
 # VSCode Simulator project for LVGL
 
+## Product development fork
+
+Use branch `product/macos-v9.6` for this product. Clone with `--recurse-submodules`; access to the private `ui/` repository is required. The simulator still runs the official Widgets Demo until product pages are integrated.
+
+See [产品 UI 开发与双电脑同步](docs/DEVELOPMENT.md) for the macOS LLVM build, repository layout, and Git workflow.
+
 [LVGL](https://github.com/lvgl/lvgl) is written mainly for microcontrollers and embedded systems, however you can run the library **on your PC** as well without any embedded hardware. The code written on PC can be simply copied when your are using an embedded system.
 
 This project is pre-configured for VSCode and should work work on Windows, Linux and MacOs as well. FreeRTOS is also included and can be optionally enabled to better simulate embedded system's behavior. 
