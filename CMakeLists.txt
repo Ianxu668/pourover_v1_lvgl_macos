@@ -1,6 +1,24 @@
 cmake_minimum_required(VERSION 3.12.4)
 project(lvgl C CXX)
 
+option(PO_UI_CORE_ONLY "Build shared UI software tests without desktop/vector dependencies" OFF)
+if(PO_UI_CORE_ONLY)
+    if(USE_FREERTOS OR LVGL_PRO_PROJECT_DIR)
+        message(FATAL_ERROR "PO_UI_CORE_ONLY validates the bundled UI without FreeRTOS or replacement projects")
+    endif()
+    set(LV_BUILD_CONF_PATH "${PROJECT_SOURCE_DIR}/config/lv_conf_core.h" CACHE PATH "Core test config" FORCE)
+    set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
+    set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(CONFIG_LV_USE_THORVG OFF CACHE BOOL "" FORCE)
+    set(CONFIG_LV_USE_THORVG_INTERNAL OFF CACHE BOOL "" FORCE)
+    set(LV_FETCH_DEPENDENCIES OFF CACHE BOOL "" FORCE)
+    set(CMAKE_C_STANDARD 99)
+    include(CTest)
+    add_subdirectory(lvgl)
+    add_subdirectory(ui product-ui)
+    return()
+endif()
+
 # Set the correct FreeRTOS port for your system (e.g., Posix for WSL)
 set(FREERTOS_PORT GCC_POSIX CACHE STRING "Port for FreeRTOS on Posix environment")
 
@@ -69,7 +87,9 @@ add_compile_definitions($<$<BOOL:${LV_USE_FFMPEG}>:LV_USE_FFMPEG=1>)
 add_subdirectory(lvgl)
 target_include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR} ${SDL2_INCLUDE_DIRS})
 
-set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c src/simulator_preferences.c)
+set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c src/hal/frame_stats.c
+    src/simulator_preferences.c src/simulator_options.c src/simulator_capture.c
+    src/simulator_start.c)
 set(MAIN_LIBS lvgl lvgl::examples lvgl::demos lvgl::thorvg ${SDL2_LIBRARIES})
 
 # Create the main executable, depending on the FreeRTOS option
@@ -170,6 +190,17 @@ if(BUILD_TESTING AND UNIX)
     "${PRODUCT_UI_SOURCE_DIR}/include"
   )
   add_test(NAME simulator_preferences COMMAND simulator_preferences_test)
+
+  add_executable(simulator_options_test src/simulator_options.c src/simulator_preferences.c)
+  target_compile_definitions(simulator_options_test PRIVATE SIMULATOR_OPTIONS_TEST)
+  target_include_directories(simulator_options_test PRIVATE "${PRODUCT_UI_SOURCE_DIR}/include")
+  add_test(NAME simulator_options COMMAND simulator_options_test)
+
+  add_executable(simulator_start_test src/simulator_start.c)
+  target_compile_definitions(simulator_start_test PRIVATE LV_CONF_INCLUDE_SIMPLE SIMULATOR_START_TEST)
+  target_link_libraries(simulator_start_test PRIVATE lvgl lib-ui ${SDL2_LIBRARIES})
+  add_test(NAME simulator_start COMMAND simulator_start_test)
+  set_tests_properties(simulator_start PROPERTIES TIMEOUT 5)
 endif()
 
 # On Windows, GUI applications do not show a console by default,

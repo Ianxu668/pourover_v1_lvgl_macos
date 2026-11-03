@@ -1,5 +1,6 @@
 # Ignore build folder
 build/
+build-core/
 bin/
 
 # Ignore all dot folders, with below exceptions

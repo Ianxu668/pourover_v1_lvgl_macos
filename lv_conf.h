@@ -149,7 +149,7 @@
 #define LV_COLOR_MIX_ROUND_OFS 0
 
 /** Default display refresh, input device read and animation step period. */
-#define LV_DEF_REFR_PERIOD 33
+#define LV_DEF_REFR_PERIOD 16
 
 /** Used to initialize default sizes such as widget sizes and style paddings. */
 #define LV_DPI_DEF 130
@@ -2366,14 +2366,16 @@
 /** LV_ASSERT_NULL */
 #define LV_USE_ASSERT_NULL 0
 
-/** LV_ASSERT_STYLE */
+/* Keep expensive diagnostics in Debug; Release is the frame-time measurement build. */
+#ifdef NDEBUG
+#define LV_USE_ASSERT_STYLE 0
+#define LV_USE_ASSERT_MEM_INTEGRITY 0
+#define LV_USE_ASSERT_OBJ 0
+#else
 #define LV_USE_ASSERT_STYLE 1
-
-/** LV_ASSERT_MEM_INTEGRITY */
 #define LV_USE_ASSERT_MEM_INTEGRITY 1
-
-/** LV_ASSERT_OBJ */
 #define LV_USE_ASSERT_OBJ 1
+#endif
 
 /** Disable warning saying `LV_ASSERT_HANDLER_INCLUDE` is deprecated.
  *  This setting allows you to keep using old LVGL versions which rely on

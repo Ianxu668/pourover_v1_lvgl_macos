@@ -7,7 +7,9 @@
 - 产品 UI：`ui/` 子模块，私有仓库 `Ianxu668/pourover_ui`。
 - 固件：独立的 `pour_over_scale_v2`，本次未接入 UI 子模块、未修改源码或 SDK。
 
-模拟器根工程默认通过 `add_subdirectory(ui product-ui)` 构建 UI 子模块的 `lib-ui`，入口显示产品 Boot 和首次语言设置页；页面实现与静态资源只维护在 UI 私有仓库。首次运行或偏好无效时，模拟器以英语启动语言设置页（Boot 预览延迟 1500 ms，仅为桌面流程，不是硬件时序）。有效偏好会被读取并跳过语言页；由于下一产品页尚未集成，模拟器继续停留在 Boot，不自行补造 Home 页面。
+模拟器根工程默认通过 `add_subdirectory(ui product-ui)` 构建 UI 子模块的 `lib-ui`，入口显示产品 Boot 和首次语言设置页；页面实现与静态资源只维护在 UI 私有仓库。首次运行或偏好无效时，宿主登记 Boot 退出请求，等待动画完成自身展示/退出后进入英语语言设置；不再以 1500 ms 硬切换。有效偏好会被读取并跳过语言页；由于下一产品页尚未集成，模拟器保留最终 Logo，不自行补造 Home 页面。
+
+共享 UI 的页面、组件、状态所有权与后续扩展规则见私有 `ui/docs/ARCHITECTURE.md`。A/G/H 都是候选，默认 H 只是当前预览入口，不代表最终产品选择。
 
 产品页面、样式、字体、图片应保存在 UI 私有仓库。SDL、模拟数据留在模拟器；真实传感器、电源、RTOS、显示/触摸驱动留在固件。不要把产品源码、私有设计或资源提交到公开的模拟器/LVGL Fork。
 
@@ -31,7 +33,7 @@ cd pourover_v1_lvgl_macos
 
 `setup.sh` 检查 macOS 和 Xcode 工具，仅安装缺失的 Homebrew LLVM、CMake、Ninja、SDL2，不主动升级已有依赖；初始化缺失的子模块（需要私有 UI 仓库权限），再使用 Ninja + Homebrew Clang 配置 Release 构建，关闭 FreeRTOS 和核心测试专用模式，使用默认 `ui/`。如果已初始化的子模块偏离父仓库锁定提交或存在冲突，脚本会停止，不强制切换本地版本。它不会清理已有构建缓存；如果旧缓存使用其他编译器或生成器，应手动使用新构建目录。
 
-`run.sh` 使用 8 个并行任务编译，成功后从项目根目录启动 `bin/main`；失败时不会运行旧产物。两个脚本都可以从任意工作目录调用，不需要 source。日常运行不重复安装依赖或执行测试，需要时单独运行：
+`run.sh` 使用 8 个并行任务编译，成功后从项目根目录启动 `bin/main`；失败时不会运行旧产物。普通启动和 `--screen boot` 预览会先显示 PC 调试专用的 **Start Boot** 按钮，点击后才创建并播放开机动画；等待期间不计入动画帧率统计。此按钮只在模拟器宿主层实现，不进入共享 UI 或实际固件。`--screen language` 直接进入语言页，`--screenshot` 自动运行原流程，不等待点击。两个脚本都可以从任意工作目录调用，不需要 source。日常运行不重复安装依赖或执行测试，需要时单独运行：
 
 ```sh
 ctest --test-dir build --output-on-failure
@@ -41,10 +43,24 @@ sh tests/build_scripts_test.sh  # 使用假工具检查脚本，不安装依赖�
 预览及截图示例：
 
 ```sh
-./bin/main --screen boot
+./bin/main --screen boot --boot-animation A
+./bin/main --screen boot --boot-animation G
+./bin/main --screen boot --boot-animation H
 ./bin/main --screen language --language ja
 ./bin/main --screen language --screenshot /tmp/language.ppm
 ```
+
+`--screen boot --screenshot <path.ppm>` 等待所选动画稳定后截取 960×376 逻辑画布，不截取起始黑场/狭缝。更细的关键帧由私有 UI 的无 SDL 测试输出。60 Hz 预览使用 16 ms LVGL 调度并检查 SDL VSYNC 请求；启动日志记录显示模式、drawable 尺寸和入场刷新间隔。日志包含设计停顿及 H 的离散解码节奏，不能将整个入场的 P95/FPS 当作连续运动或实板帧率验收。Release 关闭昂贵的对象/样式/内存完整性检查，Debug 保留它们。
+
+隔离的软件兼容性检查使用独立构建目录，不查询 SDL、不链接 ThorVG，也不复制桌面配置到固件：
+
+```sh
+cmake -S . -B build-core -G Ninja -DPO_UI_CORE_ONLY=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-core --parallel 8
+ctest --test-dir build-core --output-on-failure
+```
+
+该构建运行实际 LVGL 的 RGB565/A8、原生线条、动画/Timeline 和页面测试，不等于 BK7258 交叉编译或实板验收。不要在同一构建目录切换普通/核心配置。
 
 模拟器将确认后的语言保存到 SDL 的 `Mistro/PourOverScale` 偏好目录；命令行 `--language` 只提供临时初始选择。默认 UI 由私有 `ui/` 子模块提供。如需用兼容的 LVGL Pro 工程替代该子模块，可设置 `-DLVGL_PRO_PROJECT_DIR=<path>`；指定工程需提供 `lib-ui` target 及相同的 `pourover_ui.h` 启动接口。`build/`、`bin/` 不提交或跨电脑复制。每台电脑独立配置；切换编译器时使用新的构建目录。
 
