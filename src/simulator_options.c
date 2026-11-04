@@ -5,7 +5,7 @@
 
 void simulator_options_usage(const char *program)
 {
-    fprintf(stderr, "Usage: %s [--screen boot|language] [--boot-animation A|G|H] "
+    fprintf(stderr, "Usage: %s [--screen boot|language|ready] [--boot-animation A|G|H] "
                     "[--language locale] [--screenshot path.ppm]\n", program);
 }
 
@@ -20,6 +20,7 @@ bool simulator_options_parse(int argc, char **argv, simulator_options_t *options
         if(strcmp(option, "--screen") == 0) {
             if(strcmp(value, "boot") == 0) options->screen = SCREEN_BOOT;
             else if(strcmp(value, "language") == 0) options->screen = SCREEN_LANGUAGE;
+            else if(strcmp(value, "ready") == 0) options->screen = SCREEN_READY;
             else return false;
         }
         else if(strcmp(option, "--boot-animation") == 0) {
@@ -40,9 +41,10 @@ bool simulator_options_parse(int argc, char **argv, simulator_options_t *options
         else return false;
     }
     /* The language page takes precedence; the boot variant would silently never run. */
-    if(options->screen == SCREEN_LANGUAGE && boot_animation_set)
-        fprintf(stderr, "Note: --boot-animation is ignored with --screen language; "
-                        "the language preview takes precedence.\n");
+    if((options->screen == SCREEN_LANGUAGE || options->screen == SCREEN_READY) && boot_animation_set)
+        fprintf(stderr, "Note: --boot-animation is ignored with --screen %s; "
+                        "the page preview takes precedence.\n",
+                options->screen == SCREEN_LANGUAGE ? "language" : "ready");
     return true;
 }
 
@@ -88,6 +90,9 @@ int main(void)
     unsigned warnings = 0;
     while(fgets(line, sizeof(line), captured))
         if(strstr(line, "--boot-animation") && strstr(line, "--screen language")) warnings++;
+    char *ready_args[] = {"simulator", "--screen", "ready"};
+    assert(simulator_options_parse(3, ready_args, &options));
+    assert(options.screen == SCREEN_READY);
     assert(warnings == 2);
     puts("PASS: simulator defaults, A/G/H selection, locale, capture, conflict warning and invalid arguments");
     return 0;

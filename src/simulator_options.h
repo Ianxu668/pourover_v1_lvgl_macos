@@ -3,7 +3,7 @@
 
 #include "pourover_ui.h"
 
-typedef enum { SCREEN_AUTO, SCREEN_BOOT, SCREEN_LANGUAGE } simulator_screen_t;
+typedef enum { SCREEN_AUTO, SCREEN_BOOT, SCREEN_LANGUAGE, SCREEN_READY } simulator_screen_t;
 
 typedef struct {
     simulator_screen_t screen;

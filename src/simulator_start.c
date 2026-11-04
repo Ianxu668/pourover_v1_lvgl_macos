@@ -3,11 +3,19 @@
 #include <stdio.h>
 #include <SDL.h>
 #include "lvgl/lvgl.h"
+#include "pourover_ui.h"
 
 static void start_clicked(lv_event_t *event)
 {
     bool *started = lv_event_get_user_data(event);
     *started = true;
+}
+
+static void theme_clicked(lv_event_t *event)
+{
+    lv_obj_t *label = lv_event_get_user_data(event);
+    po_ui_set_light(!po_ui_is_light());
+    lv_label_set_text(label, po_ui_is_light() ? "Theme: Light" : "Theme: Dark");
 }
 
 void simulator_wait_for_start(void)
@@ -31,6 +39,14 @@ void simulator_wait_for_start(void)
     lv_label_set_text(hint, "PC debug only - click to start");
     lv_obj_set_style_text_color(hint, lv_color_white(), 0);
     lv_obj_align_to(hint, button, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
+
+    lv_obj_t *theme = lv_button_create(panel);
+    lv_obj_set_size(theme, 200, 48);
+    lv_obj_align_to(theme, hint, LV_ALIGN_OUT_BOTTOM_MID, 0, 16);
+    lv_obj_t *theme_label = lv_label_create(theme);
+    lv_label_set_text(theme_label, po_ui_is_light() ? "Theme: Light" : "Theme: Dark");
+    lv_obj_center(theme_label);
+    lv_obj_add_event_cb(theme, theme_clicked, LV_EVENT_CLICKED, theme_label);
 
     puts("PC debug: waiting for Start Boot.");
     while(!started) {

@@ -31,7 +31,7 @@ To build against a different LVGL Pro project, set `LVGL_PRO_PROJECT_DIR`; it is
 cmake -S . -B build -DLVGL_PRO_PROJECT_DIR=/path/to/ui-project
 ```
 
-`simulator_preferences` currently stores only the selected language, not window size or position. The simulator reads and saves the selected locale as `language` under SDL's `Mistro/PourOverScale` preference directory. A valid saved locale is loaded before the UI starts. With no valid preference, the simulator shows boot for a 1500 ms **host preview delay**, then opens language setup in English. That delay is not a hardware timing requirement. With a valid saved locale the simulator remains on boot, since the next product screen is not defined here.
+`simulator_preferences` currently stores only the selected language, not window size or position. The simulator reads and saves the selected locale as `language` under SDL's `Mistro/PourOverScale` preference directory. A valid saved locale is loaded before the UI starts. With no valid preference, the simulator shows boot for a 1500 ms **host preview delay**, then opens language setup in English. That delay is not a hardware timing requirement. With a valid saved locale, an interactive launch finishes boot and opens mode 1 ready. `--screenshot` without `--screen ready` still captures the boot hold.
 
 Useful preview and capture commands:
 
@@ -42,7 +42,7 @@ Useful preview and capture commands:
 ./bin/main --screenshot /tmp/pourover-language.ppm --screen language --language ja
 ```
 
-`--screen boot` holds the boot screen. `--screen language` opens the language screen even when a preference exists, without clearing or rewriting it. `--language` accepts `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`, `de`, or `es` and sets only the temporary initial choice; language is saved only when the UI's Continue action confirms it. `--screenshot` writes a binary PPM (`P6`) image of the rendered screen and exits; it is useful for automated capture where the SDL backend can initialize.
+`--screen boot` holds the boot screen. `--screen language` opens the language screen even when a preference exists, without clearing or rewriting it. `--screen ready` opens the mode 1 ready baseline. That page is one snapshot: the simulator keeps a `po_ready_view_t` and calls `po_ui_ready_set()` for later changes. On the ready screen the keys are `C` link, `H` charge, `[` `]` battery, `T`/`A`/`N` tare, `O` overload, `R` reject, `U` relabel, arrows for weight, and `1`-`4` for the left column. `U` changes the unit label only; the page does not convert grams to ounces. A note stays about 1.6 seconds, then the simulator clears it. The PC start screen has a theme button. `cmake -DPO_UI_THEME_LIGHT=ON` selects the light ink as the compile default; the button can still switch before the first product page. A confirmed language page advances to ready on the next loop. `--language` accepts `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `fr`, `de`, or `es` and sets only the temporary initial choice; language is saved only when the UI's Continue action confirms it. `--screenshot` writes a binary PPM (`P6`) image of the rendered screen and exits; it is useful for automated capture where the SDL backend can initialize.
 
 ## Simulator and device context
 
