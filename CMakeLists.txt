@@ -181,6 +181,9 @@ target_include_directories(main PRIVATE
   "${PRODUCT_UI_SOURCE_DIR}/include"
 )
 target_link_libraries(main ${MAIN_LIBS})
+if(TARGET lib-ui-resource-stdio)
+  target_link_libraries(main lib-ui-resource-stdio)
+endif()
 
 if(BUILD_TESTING AND UNIX)
   add_executable(simulator_preferences_test src/simulator_preferences.c)
@@ -189,11 +192,13 @@ if(BUILD_TESTING AND UNIX)
     "${PROJECT_SOURCE_DIR}/src"
     "${PRODUCT_UI_SOURCE_DIR}/include"
   )
+  target_link_libraries(simulator_preferences_test PRIVATE lib-ui)
   add_test(NAME simulator_preferences COMMAND simulator_preferences_test)
 
   add_executable(simulator_options_test src/simulator_options.c src/simulator_preferences.c)
   target_compile_definitions(simulator_options_test PRIVATE SIMULATOR_OPTIONS_TEST)
   target_include_directories(simulator_options_test PRIVATE "${PRODUCT_UI_SOURCE_DIR}/include")
+  target_link_libraries(simulator_options_test PRIVATE lib-ui)
   add_test(NAME simulator_options COMMAND simulator_options_test)
 
   add_executable(simulator_start_test src/simulator_start.c)
@@ -201,6 +206,28 @@ if(BUILD_TESTING AND UNIX)
   target_link_libraries(simulator_start_test PRIVATE lvgl lib-ui ${SDL2_LIBRARIES})
   add_test(NAME simulator_start COMMAND simulator_start_test)
   set_tests_properties(simulator_start PROPERTIES TIMEOUT 5)
+
+  add_executable(simulator_ready_debug_test src/main.c)
+  target_compile_definitions(simulator_ready_debug_test PRIVATE
+    LV_CONF_INCLUDE_SIMPLE SIMULATOR_READY_DEBUG_TEST)
+  target_include_directories(simulator_ready_debug_test PRIVATE
+    "${PRODUCT_UI_SOURCE_DIR}"
+    "${PRODUCT_UI_SOURCE_DIR}/include")
+  target_link_libraries(simulator_ready_debug_test PRIVATE ${MAIN_LIBS})
+  add_test(NAME simulator_ready_debug COMMAND simulator_ready_debug_test)
+
+  add_executable(simulator_host_startup_test
+    tests/simulator_host_startup_test.c
+    src/simulator_options.c
+    src/simulator_preferences.c)
+  target_compile_definitions(simulator_host_startup_test PRIVATE
+    LV_CONF_INCLUDE_SIMPLE SIMULATOR_HOST_STARTUP_TEST)
+  target_include_directories(simulator_host_startup_test PRIVATE
+    "${PRODUCT_UI_SOURCE_DIR}"
+    "${PRODUCT_UI_SOURCE_DIR}/include")
+  target_link_libraries(simulator_host_startup_test PRIVATE ${MAIN_LIBS})
+  add_test(NAME simulator_host_startup COMMAND simulator_host_startup_test)
+  set_tests_properties(simulator_host_startup PROPERTIES TIMEOUT 5)
 endif()
 
 # On Windows, GUI applications do not show a console by default,

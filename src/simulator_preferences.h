@@ -4,9 +4,8 @@
 #include <stdbool.h>
 #include "pourover_ui.h"
 
-const char *simulator_preferences_locale(po_language_t language);
-bool simulator_preferences_parse_locale(const char *locale, po_language_t *language);
-bool simulator_preferences_read(const char *path, po_language_t *language);
-bool simulator_preferences_write(const char *path, po_language_t language);
+bool simulator_preferences_parse_locale(const char *tag, const po_ui_locale_t **locale);
+bool simulator_preferences_read(const char *path, const po_ui_locale_t **locale);
+bool simulator_preferences_write(const char *path, const po_ui_locale_t *locale);
 
 #endif

@@ -9,8 +9,9 @@ typedef struct {
     simulator_screen_t screen;
     po_boot_variant_t boot_animation;
     bool language_set;
-    po_language_t language;
+    const po_ui_locale_t *language;
     const char *screenshot_path;
+    const char *resource_pack_path;
 } simulator_options_t;
 
 bool simulator_options_parse(int argc, char **argv, simulator_options_t *options);

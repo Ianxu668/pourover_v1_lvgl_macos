@@ -777,7 +777,11 @@
 #define LV_USE_OBSERVER 1
 
 /** Look up strings by ID for the selected language with lv_translation_get(). */
+#ifdef PO_UI_RESOURCE_PROTOTYPE
+#define LV_USE_TRANSLATION 1
+#else
 #define LV_USE_TRANSLATION 0
+#endif
 
 /** Color filter style */
 #define LV_USE_COLOR_FILTER 0
@@ -2067,13 +2071,13 @@
 #endif /*LV_USE_FS_FROGFS*/
 
 /** Reach data already in memory through the lv_fs API, without a real file system. */
+#ifdef PO_UI_RESOURCE_PROTOTYPE
+#define LV_USE_FS_MEMFS 1
+#define LV_FS_MEMFS_LETTER 'M'
+#else
 #define LV_USE_FS_MEMFS 0
-
-#if LV_USE_FS_MEMFS
-/** Drive letter for memfs (65 = 'A', 0 = disabled) */
 #define LV_FS_MEMFS_LETTER 0
-
-#endif /*LV_USE_FS_MEMFS*/
+#endif
 
 
 /*============================================================================

@@ -6,13 +6,14 @@
 void simulator_options_usage(const char *program)
 {
     fprintf(stderr, "Usage: %s [--screen boot|language|ready] [--boot-animation A|G|H] "
-                    "[--language locale] [--screenshot path.ppm]\n", program);
+                    "[--language locale] [--resource-pack path.por] [--screenshot path.ppm]\n",
+            program);
 }
 
 bool simulator_options_parse(int argc, char **argv, simulator_options_t *options)
 {
     *options = (simulator_options_t){.screen = SCREEN_AUTO, .boot_animation = PO_BOOT_H,
-                                     .language = PO_LANG_EN};
+                                     .language = po_ui_locale_find("en")};
     bool boot_animation_set = false;
     for(int i = 1; i < argc; ++i) {
         if(i + 1 == argc) return false;
@@ -38,8 +39,13 @@ bool simulator_options_parse(int argc, char **argv, simulator_options_t *options
             if(!value[0]) return false;
             options->screenshot_path = value;
         }
+        else if(strcmp(option, "--resource-pack") == 0) {
+            if(!value[0]) return false;
+            options->resource_pack_path = value;
+        }
         else return false;
     }
+    if(options->resource_pack_path && options->screen != SCREEN_READY) return false;
     /* The language page takes precedence; the boot variant would silently never run. */
     if((options->screen == SCREEN_LANGUAGE || options->screen == SCREEN_READY) && boot_animation_set)
         fprintf(stderr, "Note: --boot-animation is ignored with --screen %s; "
@@ -60,17 +66,24 @@ int main(void)
     char *defaults[] = {"simulator"};
     assert(simulator_options_parse(1, defaults, &options));
     assert(options.boot_animation == PO_BOOT_H && options.screen == SCREEN_AUTO);
+    assert(!options.language_set && options.language == po_ui_locale_find("en"));
     for(unsigned variant = 0; variant < PO_BOOT_COUNT; ++variant) {
         char *names[] = {"A", "G", "H"};
         char *args[] = {"simulator", "--screen", "boot", "--boot-animation", names[variant],
-                        "--language", "ja", "--screenshot", "/tmp/boot.ppm"};
+                        "--language", "zh-Hans", "--screenshot", "/tmp/boot.ppm"};
         assert(simulator_options_parse(9, args, &options));
         assert(options.boot_animation == (po_boot_variant_t)variant);
-        assert(options.screen == SCREEN_BOOT && options.language_set && options.language == PO_LANG_JA);
+        assert(options.screen == SCREEN_BOOT && options.language_set);
+        assert(options.language == po_ui_locale_find("zh-Hans"));
         assert(strcmp(options.screenshot_path, "/tmp/boot.ppm") == 0);
     }
     char *bad[] = {"simulator", "--boot-animation", "I"};
     assert(!simulator_options_parse(3, bad, &options));
+    char *unsupported_locale[] = {"simulator", "--language", "ja"};
+    assert(!simulator_options_parse(3, unsupported_locale, &options));
+    char *supported_locale[] = {"simulator", "--language", "en"};
+    assert(simulator_options_parse(3, supported_locale, &options));
+    assert(options.language == po_ui_locale_find("en"));
     assert(!simulator_options_parse(2, bad, &options));
     char *empty[] = {"simulator", "--screenshot", ""};
     assert(!simulator_options_parse(3, empty, &options));
@@ -93,8 +106,17 @@ int main(void)
     char *ready_args[] = {"simulator", "--screen", "ready"};
     assert(simulator_options_parse(3, ready_args, &options));
     assert(options.screen == SCREEN_READY);
+    char *resource_args[] = {"simulator", "--screen", "ready", "--resource-pack", "ready.por"};
+    assert(simulator_options_parse(5, resource_args, &options));
+    assert(options.resource_pack_path && strcmp(options.resource_pack_path, "ready.por") == 0);
+    char *resource_auto[] = {"simulator", "--resource-pack", "ready.por"};
+    assert(!simulator_options_parse(3, resource_auto, &options));
+    char *resource_boot[] = {"simulator", "--screen", "boot", "--resource-pack", "ready.por"};
+    assert(!simulator_options_parse(5, resource_boot, &options));
+    char *resource_empty[] = {"simulator", "--screen", "ready", "--resource-pack", ""};
+    assert(!simulator_options_parse(5, resource_empty, &options));
     assert(warnings == 2);
-    puts("PASS: simulator defaults, A/G/H selection, locale, capture, conflict warning and invalid arguments");
+    puts("PASS: simulator defaults, A/G/H selection, catalog locales, capture, conflict warning and invalid arguments");
     return 0;
 }
 #endif

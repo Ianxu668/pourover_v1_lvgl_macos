@@ -76,6 +76,7 @@ void frame_stats_report(void)
            "Pre-merge invalidations: %llu px (overlaps counted).\n",
            milliseconds(stats.render_ticks), milliseconds(stats.flush_ticks),
            (unsigned long long)stats.invalid_pixels);
-    puts("Entry intervals include intentional holds and H's 66 ms decode cadence; "
+    puts("Entry intervals include intentional holds and H's ~20.5 ms decode cadence "
+         "(66 ms source steps at the 1000/3220 playback); "
          "these are diagnostics, not continuous-motion or physical-panel FPS acceptance.");
 }
