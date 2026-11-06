@@ -777,11 +777,7 @@
 #define LV_USE_OBSERVER 1
 
 /** Look up strings by ID for the selected language with lv_translation_get(). */
-#ifdef PO_UI_RESOURCE_PROTOTYPE
 #define LV_USE_TRANSLATION 1
-#else
-#define LV_USE_TRANSLATION 0
-#endif
 
 /** Color filter style */
 #define LV_USE_COLOR_FILTER 0
