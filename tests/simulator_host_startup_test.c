@@ -142,6 +142,42 @@ static void test_selected_locale_reaches_ready(char *path)
     assert(saved == po_ui_locale_find("zh-Hans"));
 }
 
+static lv_obj_t *find_image_source(lv_obj_t *object, const void *source)
+{
+    if(lv_obj_check_type(object, &lv_image_class) && lv_image_get_src(object) == source)
+        return object;
+    for(uint32_t i = 0; i < lv_obj_get_child_count(object); ++i) {
+        lv_obj_t *found = find_image_source(lv_obj_get_child(object, i), source);
+        if(found) return found;
+    }
+    return NULL;
+}
+
+static void test_curve_survives_language_handoff(char *path)
+{
+    ready_view = po_ui_ready_baseline;
+    po_ready_params_t params = {
+        .timer_mode = PO_READY_TIMER_DOWN,
+        .duration_seconds = 180,
+        .target_enabled = true,
+        .target_grams = 300,
+        .curve_enabled = false
+    };
+    ready_params_changed(&params, NULL);
+    assert(po_ui_show_language(po_ui_locale_find("en"), save_language, path));
+    confirm_language();
+    assert(po_ui_is_confirmed());
+
+    bool language_pending = false;
+    bool showing_language = true;
+    bool showing_ready = false;
+    assert(startup_dispatch(&language_pending, &showing_language, &showing_ready,
+                            po_ui_locale_find("en"), path));
+    assert(showing_ready);
+    assert(find_image_source(lv_screen_active(), &po_asset_param_curve_off));
+    assert(!find_image_source(lv_screen_active(), &po_asset_param_curve_on));
+}
+
 int main(void)
 {
     char directory[] = "/tmp/simulator-host-startup-XXXXXX";
@@ -170,6 +206,8 @@ int main(void)
     test_save_failure_stays_on_language(missing_path);
     po_ui_destroy();
     test_selected_locale_reaches_ready(path);
+    po_ui_destroy();
+    test_curve_survives_language_handoff(path);
     po_ui_destroy();
 
     lv_group_delete(group);

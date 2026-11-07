@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.12.4)
 project(lvgl C CXX)
 
+# Apple ld warns when the LVGL static cycle (lvgl <-> thorvg) is repeated
+# on the link line. The link already succeeds; this only drops the noise.
+if(APPLE)
+    add_link_options(-Wl,-no_warn_duplicate_libraries)
+endif()
+
 option(PO_UI_CORE_ONLY "Build shared UI software tests without desktop/vector dependencies" OFF)
 if(PO_UI_CORE_ONLY)
     if(USE_FREERTOS OR LVGL_PRO_PROJECT_DIR)
@@ -89,7 +95,7 @@ target_include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR} ${SDL2_INCLUDE_DIRS
 
 set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c src/hal/frame_stats.c
     src/simulator_preferences.c src/simulator_options.c src/simulator_capture.c
-    src/simulator_start.c)
+    src/simulator_start.c src/simulator_session.c)
 set(MAIN_LIBS lvgl lvgl::examples lvgl::demos lvgl::thorvg ${SDL2_LIBRARIES})
 
 # Create the main executable, depending on the FreeRTOS option
@@ -186,6 +192,10 @@ if(TARGET lib-ui-resource-stdio)
 endif()
 
 if(BUILD_TESTING AND UNIX)
+  add_executable(simulator_session_test tests/simulator_session_test.c src/simulator_session.c)
+  target_include_directories(simulator_session_test PRIVATE "${PROJECT_SOURCE_DIR}/src")
+  add_test(NAME simulator_session COMMAND simulator_session_test)
+
   add_executable(simulator_preferences_test src/simulator_preferences.c)
   target_compile_definitions(simulator_preferences_test PRIVATE SIMULATOR_PREFERENCES_TEST)
   target_include_directories(simulator_preferences_test PRIVATE
@@ -228,6 +238,19 @@ if(BUILD_TESTING AND UNIX)
   target_link_libraries(simulator_host_startup_test PRIVATE ${MAIN_LIBS})
   add_test(NAME simulator_host_startup COMMAND simulator_host_startup_test)
   set_tests_properties(simulator_host_startup PROPERTIES TIMEOUT 5)
+
+  add_executable(simulator_product_test
+    tests/simulator_product_test.c
+    src/simulator_preferences.c
+    src/simulator_session.c)
+  target_compile_definitions(simulator_product_test PRIVATE
+    LV_CONF_INCLUDE_SIMPLE SIMULATOR_PRODUCT_TEST)
+  target_include_directories(simulator_product_test PRIVATE
+    "${PRODUCT_UI_SOURCE_DIR}"
+    "${PRODUCT_UI_SOURCE_DIR}/include")
+  target_link_libraries(simulator_product_test PRIVATE ${MAIN_LIBS})
+  add_test(NAME simulator_product COMMAND simulator_product_test)
+  set_tests_properties(simulator_product PROPERTIES TIMEOUT 10)
 endif()
 
 # On Windows, GUI applications do not show a console by default,

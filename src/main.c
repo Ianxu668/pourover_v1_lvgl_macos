@@ -12,7 +12,7 @@
 #include "simulator_preferences.h"
 #include "simulator_start.h"
 #if defined(PO_UI_RESOURCE_PROTOTYPE) && !defined(SIMULATOR_READY_DEBUG_TEST) && \
-    !defined(SIMULATOR_HOST_STARTUP_TEST)
+    !defined(SIMULATOR_HOST_STARTUP_TEST) && !defined(SIMULATOR_PRODUCT_TEST)
 #include "po_resource_pack.h"
 #endif
 
@@ -45,6 +45,7 @@ static char *get_preferences_file_path(void)
 }
 
 static po_ready_view_t ready_view;
+static bool ready_curve = true;
 
 static int clamp_ready(int value, int low, int high)
 {
@@ -74,6 +75,19 @@ static void ready_params_changed(const po_ready_params_t *params, void *context)
     ready_view.preset_seconds = params->duration_seconds;
     ready_view.show_target = params->target_enabled;
     if(params->target_grams > 0) ready_view.target_grams = params->target_grams;
+    ready_curve = params->curve_enabled;
+}
+
+static void ready_restore_params(void)
+{
+    const po_ready_params_t params = {
+        .timer_mode = ready_view.show_preset ? PO_READY_TIMER_DOWN : PO_READY_TIMER_UP,
+        .duration_seconds = ready_view.preset_seconds,
+        .target_enabled = ready_view.show_target,
+        .target_grams = ready_view.target_grams,
+        .curve_enabled = ready_curve
+    };
+    (void)po_ui_ready_set_params(&params);
 }
 
 static void ready_tared(void *context)
@@ -273,12 +287,595 @@ static bool startup_dispatch(bool *language_pending, bool *showing_language,
             fprintf(stderr, "Could not create mode 1 ready.\n");
             return false;
         }
+        ready_restore_params();
     }
     return true;
 }
 
 #ifndef SIMULATOR_READY_DEBUG_TEST
 #ifndef SIMULATOR_HOST_STARTUP_TEST
+#include "simulator_session.h"
+
+static sim_session_t product_session;
+static uint8_t product_was[SDL_NUM_SCANCODES];
+static uint32_t product_brew_tick;
+static bool product_started;
+
+static bool refresh_session(void);
+static bool present_session(const po_ui_locale_t *locale, uint32_t *note_until);
+static void product_handle_key(sim_key_t key, const po_ui_locale_t *locale, uint32_t *note_until);
+
+#define HOST_BREW_CAP 48
+static brew_sample_t host_brew[HOST_BREW_CAP];
+static unsigned host_brew_count;
+static int host_brew_origin;
+static int host_brew_last;
+
+static void host_brew_begin(void)
+{
+    host_brew_count = 0;
+    host_brew_origin = product_session.net_decigrams;
+    host_brew_last = host_brew_origin;
+}
+
+static void host_brew_sample(void)
+{
+    int weight = product_session.net_decigrams;
+    int flow = weight - host_brew_last;
+    if(flow < 0) flow = 0;
+    if(host_brew_count == 0) {
+        host_brew[0].weight_decigrams = host_brew_origin;
+        host_brew[0].flow_decigrams = 0;
+        host_brew_count = 1;
+    }
+    host_brew_last = weight;
+    if(host_brew_count >= HOST_BREW_CAP) {
+        if(host_brew_count > 1)
+            memmove(&host_brew[1], &host_brew[2], (host_brew_count - 2u) * sizeof(host_brew[0]));
+        if(host_brew_count > 1) host_brew_count--;
+    }
+    if(host_brew_count >= HOST_BREW_CAP) return;
+    host_brew[host_brew_count].weight_decigrams = weight;
+    host_brew[host_brew_count].flow_decigrams = flow;
+    host_brew_count++;
+}
+
+static void host_brew_follow(void)
+{
+    int weight = product_session.net_decigrams;
+    int previous;
+    int flow;
+    if(host_brew_count == 0) return;
+    previous = host_brew_count > 1 ? host_brew[host_brew_count - 2u].weight_decigrams : weight;
+    flow = weight - previous;
+    if(flow < 0) flow = 0;
+    host_brew[host_brew_count - 1u].weight_decigrams = weight;
+    host_brew[host_brew_count - 1u].flow_decigrams = flow;
+    host_brew_last = weight;
+}
+
+/* Page-local state lives in host mirrors; dynamic session data is filled per call.
+ * Callbacks only mutate the mirrors and set pending flags; the host loop services
+ * them outside LVGL event context. */
+
+static bool m1_brew_target_sheet;
+static bool m1_result_save_open;
+static po_m2_ready_view_t m2_ready_mirror;
+static bool m2_ready_mirror_valid;
+static po_m2_brew_view_t m2_brew_mirror;
+static bool m2_brew_mirror_valid;
+static po_m2_result_view_t m2_result_mirror;
+static bool m2_result_mirror_valid;
+static po_settings_view_t settings_mirror;
+static bool settings_mirror_valid;
+static bool product_view_dirty;
+static bool product_inject_valid;
+static sim_key_t product_inject_key;
+static bool product_pending_page_valid;
+static sim_page_t product_pending_page;
+static bool settings_screen_pending;
+static int settings_pending_screen;
+
+static void fill_m1_brew(brew_view_t *view)
+{
+    memset(view, 0, sizeof(*view));
+    view->elapsed_seconds = product_session.elapsed_seconds;
+    view->net_decigrams = product_session.net_decigrams;
+    view->flow_decigrams = host_brew_count ? host_brew[host_brew_count - 1u].flow_decigrams : 0;
+    view->show_curve = ready_curve;
+    view->unlocked = true;
+    view->target_enabled = ready_view.show_target;
+    view->target_grams = ready_view.target_grams;
+    view->target_sheet = m1_brew_target_sheet;
+    view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
+    view->sample_count = host_brew_count;
+    view->samples = host_brew_count ? host_brew : NULL;
+}
+
+static void fill_m1_result(result_view_t *view)
+{
+    memset(view, 0, sizeof(*view));
+    view->elapsed_seconds = (int)product_session.elapsed_seconds;
+    view->total_water_decigrams = product_session.net_decigrams;
+    view->target_grams = ready_view.show_target ? ready_view.target_grams : 0;
+    view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
+    view->save_open = m1_result_save_open;
+    view->save_seconds_left = m1_result_save_open ? 30 : -1;
+}
+
+static void fill_m2_ready(po_m2_ready_view_t *view)
+{
+    *view = m2_ready_mirror;
+    view->net_decigrams = product_session.net_decigrams;
+    view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
+}
+
+static void fill_m2_brew(po_m2_brew_view_t *view)
+{
+    *view = m2_brew_mirror;
+    view->elapsed_seconds = product_session.elapsed_seconds;
+    view->net_decigrams = product_session.net_decigrams;
+    view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
+    view->sample_count = 0;
+    view->samples = NULL;
+}
+
+static void fill_m2_result(po_m2_result_view_t *view)
+{
+    *view = m2_result_mirror;
+    view->elapsed_seconds = (int)product_session.elapsed_seconds;
+    view->water_decigrams = product_session.net_decigrams;
+    view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
+    view->sample_count = 0;
+    view->samples = NULL;
+}
+
+static void product_inject(sim_key_t key)
+{
+    product_inject_key = key;
+    product_inject_valid = true;
+}
+
+static void on_m1_brew_target(void *context)
+{
+    (void)context;
+    m1_brew_target_sheet = true;
+    product_view_dirty = true;
+}
+
+static void on_m1_brew_target_toggle(void *context)
+{
+    (void)context;
+    ready_view.show_target = !ready_view.show_target;
+    product_view_dirty = true;
+}
+
+static void on_m1_result_save(void *context)
+{
+    (void)context;
+    /* Only close a host-opened prompt; ordinary results never show one and the
+       result stays on screen. */
+    m1_result_save_open = false;
+    product_view_dirty = true;
+}
+
+static void on_m1_result_discard(void *context)
+{
+    (void)context;
+    m1_result_save_open = false;
+    product_view_dirty = true;
+}
+
+static bool m2_ready_editor_open(const po_m2_ready_view_t *view)
+{
+    /* Full-screen editors keep their draft in the page; a set would reset the
+       parent surface and close them, so dynamic updates wait. */
+    return view->surface != PO_M2_READY_MAIN && view->surface != PO_M2_READY_PARAMS;
+}
+
+static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
+{
+    (void)context;
+    m2_ready_mirror.surface = event->surface;
+    switch(event->action) {
+    case PO_M2_READY_AUTOSTART:
+        m2_ready_mirror.autostart = event->value != 0;
+        break;
+    case PO_M2_READY_ACT_DOSE:
+        m2_ready_mirror.dose_decigrams = event->value;
+        m2_ready_mirror.dose_origin = PO_M2_DOSE_MANUAL;
+        m2_ready_mirror.detect_popup = false;
+        break;
+    case PO_M2_READY_ACT_RATIO:
+        m2_ready_mirror.ratio_tenths = event->value;
+        break;
+    case PO_M2_READY_ACT_BYPASS:
+        m2_ready_mirror.bypass_decigrams = event->value;
+        break;
+    case PO_M2_READY_SOURCE:
+        m2_ready_mirror.source = (po_m2_source_t)event->value;
+        break;
+    case PO_M2_READY_RECIPE:
+        /* The page owns the copied recipe name; the host keeps the mirror's. */
+        break;
+    case PO_M2_READY_TARE:
+        product_session.net_decigrams = 0;
+        product_view_dirty = true;
+        break;
+    default:
+        break;
+    }
+}
+
+static void on_m2_brew_event(const po_m2_brew_event_t *event, void *context)
+{
+    (void)context;
+    m2_brew_mirror.surface = event->surface;
+    switch(event->action) {
+    case PO_M2_BREW_ACT_DOSE:
+        m2_brew_mirror.dose_decigrams = event->value;
+        break;
+    case PO_M2_BREW_CONTINUE:
+        m2_brew_mirror.duration_left = -1;
+        product_view_dirty = true;
+        break;
+    case PO_M2_BREW_FINISH:
+        product_inject(SIM_KEY_LEFT);
+        break;
+    default:
+        break;
+    }
+}
+
+static void on_m2_result_event(const po_m2_result_event_t *event, void *context)
+{
+    (void)context;
+    m2_result_mirror.surface = event->surface;
+    switch(event->action) {
+    case PO_M2_RESULT_SAVE_RECIPE:
+        /* Save as new recipe: close the menu and remain on the result. */
+        m2_result_mirror.surface = PO_M2_RESULT_MAIN;
+        m2_result_mirror.save_open = false;
+        product_view_dirty = true;
+        break;
+    case PO_M2_RESULT_SAVE_YES:
+    case PO_M2_RESULT_SAVE_NO:
+        /* Long-brew history choice: close the prompt and stay on the result. */
+        m2_result_mirror.save_open = false;
+        m2_result_mirror.save_seconds_left = -1;
+        m2_result_mirror.surface = PO_M2_RESULT_MAIN;
+        product_view_dirty = true;
+        break;
+    case PO_M2_RESULT_CONTINUE:
+        /* 返回继续 resumes the running brew. */
+        m2_result_mirror.save_open = false;
+        m2_result_mirror.surface = PO_M2_RESULT_MAIN;
+        product_pending_page = SIM_M2_BREW;
+        product_pending_page_valid = true;
+        break;
+    case PO_M2_RESULT_BYPASS_COMMIT:
+        m2_result_mirror.bypass_post_decigrams = event->value;
+        m2_result_mirror.bypass_live_decigrams = 0;
+        m2_result_mirror.total_decigrams = product_session.net_decigrams +
+                                           m2_result_mirror.bypass_pre_decigrams +
+                                           m2_result_mirror.bypass_post_decigrams;
+        m2_result_mirror.surface = PO_M2_RESULT_MAIN;
+        product_view_dirty = true;
+        break;
+    case PO_M2_RESULT_BYPASS_CANCEL:
+        m2_result_mirror.bypass_live_decigrams = 0;
+        break;
+    default:
+        break;
+    }
+}
+
+static po_settings_screen_t settings_parent_screen(po_settings_screen_t screen)
+{
+    switch(screen) {
+    case PO_SET_HISTORY_DETAIL:
+    case PO_SET_HISTORY_DELETE:
+    case PO_SET_HISTORY_CLEAR: return PO_SET_HISTORY;
+    case PO_SET_VOLUME:
+    case PO_SET_BRIGHTNESS:
+    case PO_SET_UNIT:
+    case PO_SET_LANGUAGE: return PO_SET_PREFS;
+    case PO_SET_WAKE:
+    case PO_SET_AUTO_OFF:
+    case PO_SET_BREW:
+    case PO_SET_CONTAINER:
+    case PO_SET_CALIBRATE:
+    case PO_SET_ABOUT:
+    case PO_SET_RESET: return PO_SET_OTHER;
+    case PO_SET_CONTAINER_EDIT: return PO_SET_CONTAINER;
+    default: return PO_SET_HOME;
+    }
+}
+
+static void on_settings_event(const po_settings_event_t *event, void *context)
+{
+    (void)context;
+    switch(event->action) {
+    case PO_SET_ACT_OPEN:
+        settings_pending_screen = event->value;
+        settings_screen_pending = true;
+        break;
+    case PO_SET_ACT_BACK:
+        settings_pending_screen = settings_parent_screen(event->screen);
+        settings_screen_pending = true;
+        break;
+    case PO_SET_ACT_UNIT:
+        settings_mirror.ounces = event->value != 0;
+        ready_view.unit = settings_mirror.ounces ? PO_READY_UNIT_OZ : PO_READY_UNIT_GRAM;
+        break;
+    case PO_SET_ACT_LANGUAGE: {
+        const po_ui_locale_t *chosen = po_ui_locale_at((unsigned)event->value);
+        if(chosen != NULL) settings_mirror.language = chosen;
+        break;
+    }
+    case PO_SET_ACT_VOLUME: settings_mirror.volume_percent = event->value; break;
+    case PO_SET_ACT_BRIGHTNESS: settings_mirror.brightness_percent = event->value; break;
+    case PO_SET_ACT_AUTO_OFF: settings_mirror.auto_off_minutes = event->value; break;
+    case PO_SET_ACT_DURATION:
+        settings_mirror.duration_seconds = event->value;
+        settings_mirror.countdown = true;
+        break;
+    case PO_SET_ACT_BREW_TAB: settings_mirror.brew_tab = event->value; break;
+    case PO_SET_ACT_COUNTDOWN: settings_mirror.countdown = event->value != 0; break;
+    case PO_SET_ACT_CLEAR_ON_START: settings_mirror.clear_on_start = event->value != 0; break;
+    case PO_SET_ACT_WAKE: settings_mirror.cup_wake = event->value != 0; break;
+    case PO_SET_ACT_CURVE: settings_mirror.curve_enabled = event->value != 0; break;
+    case PO_SET_ACT_M1_TARE: settings_mirror.m1_auto_tare = event->value != 0; break;
+    case PO_SET_ACT_AUTOSTART: settings_mirror.autostart = event->value != 0; break;
+    case PO_SET_ACT_DOSE_DETECT: settings_mirror.dose_detect = event->value != 0; break;
+    case PO_SET_ACT_FILTER: settings_mirror.filter_detect = event->value != 0; break;
+    case PO_SET_ACT_M2_TARE: settings_mirror.m2_auto_tare = event->value != 0; break;
+    default:
+        /* History, container, calibration and reset have no simulator backend. */
+        break;
+    }
+}
+
+static bool settings_service(void)
+{
+    if(!settings_screen_pending) return true;
+    settings_screen_pending = false;
+    settings_mirror.screen = (po_settings_screen_t)settings_pending_screen;
+    return po_ui_settings_set(&settings_mirror);
+}
+
+static void product_navigate(sim_key_t key, const po_ui_locale_t *locale, uint32_t *note_until)
+{
+    /* Host-initiated navigation after a page action (save, discard, finish,
+     * continue): the page already handled its own state, so the key is applied
+     * to the session without offering it to the page again. */
+    sim_key_result_t result = sim_session_key(&product_session, key, false);
+    if(result.page_changed && !present_session(locale, note_until))
+        fputs("Could not open the product page.\n", stderr);
+}
+
+static bool product_service_pending(const po_ui_locale_t *locale, uint32_t *note_until)
+{
+    if(product_inject_valid) {
+        product_inject_valid = false;
+        product_navigate(product_inject_key, locale, note_until);
+    }
+    if(product_pending_page_valid) {
+        product_pending_page_valid = false;
+        product_session.page = product_pending_page;
+        if(!present_session(locale, note_until))
+            fputs("Could not open the product page.\n", stderr);
+    }
+    if(settings_screen_pending && !settings_service())
+        fputs("Could not switch the settings screen.\n", stderr);
+    if(product_view_dirty) {
+        product_view_dirty = false;
+        if(!refresh_session())
+            fputs("Could not refresh the product page.\n", stderr);
+    }
+    return true;
+}
+
+static bool present_session(const po_ui_locale_t *locale, uint32_t *note_until)
+{
+    brew_view_t brew;
+    result_view_t result;
+    po_m2_ready_view_t mode2_ready;
+    po_m2_brew_view_t mode2_brew;
+    po_m2_result_view_t mode2_result;
+    switch(product_session.page) {
+    case SIM_M1_READY:
+        ready_view.net_decigrams = product_session.net_decigrams;
+        if(!po_ui_show_ready(&ready_view, locale)) return false;
+        po_ui_ready_set_handlers(ready_params_changed, ready_tared, note_until);
+        ready_restore_params();
+        return po_ui_ready_set_records(ready_records, 5);
+    case SIM_M1_BREW:
+        host_brew_begin();
+        m1_brew_target_sheet = false;
+        fill_m1_brew(&brew);
+        if(!po_ui_show_brew(&brew)) return false;
+        po_ui_brew_set_handlers(on_m1_brew_target, on_m1_brew_target_toggle, NULL);
+        return true;
+    case SIM_M1_RESULT:
+        m1_result_save_open = false;
+        fill_m1_result(&result);
+        if(!po_ui_show_result(&result)) return false;
+        po_ui_result_set_handlers(on_m1_result_save, on_m1_result_discard, NULL);
+        return true;
+    case SIM_M2_READY:
+        if(!m2_ready_mirror_valid) {
+            m2_ready_mirror = po_ui_m2_ready_baseline;
+            m2_ready_mirror_valid = true;
+        }
+        fill_m2_ready(&mode2_ready);
+        if(!po_ui_show_m2_ready(&mode2_ready)) return false;
+        po_ui_m2_ready_set_handlers(on_m2_ready_event, NULL);
+        return true;
+    case SIM_M2_BREW:
+        if(!m2_brew_mirror_valid) {
+            m2_brew_mirror = po_ui_m2_brew_baseline;
+            m2_brew_mirror_valid = true;
+        }
+        /* Fresh page instance: transient surface/dialog state resets, dose and
+           recipe preferences stay. */
+        m2_brew_mirror.surface = PO_M2_BREW_MAIN;
+        m2_brew_mirror.duration_left = -1;
+        m2_brew_mirror.note = PO_M2_NOTE_NONE;
+        m2_brew_mirror.editor = PO_M2_EDITOR_WHEEL;
+        fill_m2_brew(&mode2_brew);
+        if(!po_ui_show_m2_brew(&mode2_brew)) return false;
+        po_ui_m2_brew_set_handlers(on_m2_brew_event, NULL);
+        return true;
+    case SIM_M2_RESULT:
+        if(!m2_result_mirror_valid) {
+            m2_result_mirror = po_ui_m2_result_baseline;
+            m2_result_mirror_valid = true;
+        }
+        m2_result_mirror.surface = PO_M2_RESULT_MAIN;
+        m2_result_mirror.save_open = false;
+        m2_result_mirror.save_seconds_left = -1;
+        m2_result_mirror.return_seconds_left = -1;
+        m2_result_mirror.bypass_live_decigrams = 0;
+        m2_result_mirror.editor = PO_M2_EDITOR_WHEEL;
+        fill_m2_result(&mode2_result);
+        if(!po_ui_show_m2_result(&mode2_result)) return false;
+        po_ui_m2_result_set_handlers(on_m2_result_event, NULL);
+        return true;
+    case SIM_SETTINGS:
+        if(!settings_mirror_valid) {
+            settings_mirror = po_ui_settings_baseline;
+            settings_mirror.language = locale;
+            settings_mirror_valid = true;
+        }
+        settings_mirror.screen = PO_SET_HOME;
+        settings_mirror.ounces = ready_view.unit == PO_READY_UNIT_OZ;
+        if(!po_ui_show_settings(&settings_mirror)) return false;
+        po_ui_settings_set_handlers(on_settings_event, NULL);
+        return true;
+    }
+    return false;
+}
+
+static bool refresh_session(void)
+{
+    brew_view_t brew;
+    result_view_t result;
+    po_m2_ready_view_t mode2_ready;
+    po_m2_brew_view_t mode2_brew;
+    po_m2_result_view_t mode2_result;
+    switch(product_session.page) {
+    case SIM_M1_READY:
+        ready_view.net_decigrams = product_session.net_decigrams;
+        return po_ui_ready_set(&ready_view);
+    case SIM_M1_BREW:
+        fill_m1_brew(&brew);
+        return po_ui_brew_set(&brew);
+    case SIM_M1_RESULT:
+        fill_m1_result(&result);
+        return po_ui_result_set(&result);
+    case SIM_M2_READY:
+        fill_m2_ready(&mode2_ready);
+        if(m2_ready_editor_open(&mode2_ready)) return true;
+        return po_ui_m2_ready_set(&mode2_ready);
+    case SIM_M2_BREW:
+        fill_m2_brew(&mode2_brew);
+        return po_ui_m2_brew_set(&mode2_brew);
+    case SIM_M2_RESULT:
+        fill_m2_result(&mode2_result);
+        return po_ui_m2_result_set(&mode2_result);
+    case SIM_SETTINGS:
+        return true;
+    }
+    return false;
+}
+
+static bool product_key_consumed(sim_key_t key)
+{
+    if(key == SIM_KEY_LEFT) {
+        switch(product_session.page) {
+        case SIM_M1_READY: return po_ui_ready_key_left();
+        case SIM_M2_READY: return po_ui_m2_ready_key_left();
+        case SIM_M2_BREW: return po_ui_m2_brew_key_left();
+        case SIM_M2_RESULT: return po_ui_m2_result_key_left();
+        case SIM_SETTINGS: return po_ui_settings_key_left();
+        default: return false;
+        }
+    }
+    if(key != SIM_KEY_RIGHT) return false;
+    switch(product_session.page) {
+    case SIM_M1_READY: return po_ui_ready_key_right();
+    case SIM_M2_READY: return po_ui_m2_ready_key_right();
+    case SIM_M2_BREW: return po_ui_m2_brew_key_right();
+    case SIM_M2_RESULT: return po_ui_m2_result_key_right();
+    default: return false;
+    }
+}
+
+static void product_handle_key(sim_key_t key, const po_ui_locale_t *locale, uint32_t *note_until)
+{
+    bool consumed = product_key_consumed(key);
+    sim_key_result_t result = sim_session_key(&product_session, key, consumed);
+    bool weight_changed = false;
+    if(result.page_changed) {
+        if(!present_session(locale, note_until))
+            fputs("Could not open the product page.\n", stderr);
+    }
+    else if(result.data_changed) weight_changed = true;
+    if(weight_changed && product_session.page == SIM_M1_BREW) host_brew_follow();
+    if(weight_changed && product_session.page == SIM_M1_READY)
+        ready_tared(note_until); /* X tare clears the container like the T key */
+    if(weight_changed && !refresh_session())
+        fputs("Could not refresh the product page.\n", stderr);
+}
+
+
+static bool product_edge(const uint8_t *now, int count, SDL_Scancode code)
+{
+    return code < count && now[code] && !product_was[code];
+}
+
+static void poll_product_keys(const po_ui_locale_t *locale, uint32_t *note_until)
+{
+    int count = 0;
+    const uint8_t *now = SDL_GetKeyboardState(&count);
+    sim_key_t keys[3];
+    int found = 0;
+    int i;
+    if(count > SDL_NUM_SCANCODES) count = SDL_NUM_SCANCODES;
+    if(product_session.page == SIM_M1_READY)
+        product_session.net_decigrams = ready_view.net_decigrams;
+    bool weight_changed = false;
+    if(product_edge(now, count, SDL_SCANCODE_Z)) keys[found++] = SIM_KEY_LEFT;
+    if(product_edge(now, count, SDL_SCANCODE_X)) keys[found++] = SIM_KEY_RIGHT;
+    if(product_edge(now, count, SDL_SCANCODE_TAB)) keys[found++] = SIM_SWIPE_NEXT;
+    if(product_session.page != SIM_M1_READY && product_session.page != SIM_SETTINGS) {
+        if(product_edge(now, count, SDL_SCANCODE_UP)) {
+            sim_session_add_weight(&product_session, 10);
+            weight_changed = true;
+        }
+        if(product_edge(now, count, SDL_SCANCODE_DOWN)) {
+            sim_session_add_weight(&product_session, -10);
+            weight_changed = true;
+        }
+    }
+    for(i = 0; i < found; ++i) product_handle_key(keys[i], locale, note_until);
+    product_service_pending(locale, note_until);
+    if(weight_changed && !refresh_session())
+        fputs("Could not refresh the product page.\n", stderr);
+    if(count > 0) memcpy(product_was, now, (size_t)count);
+    if(product_session.page == SIM_M1_BREW || product_session.page == SIM_M2_BREW) {
+        uint32_t now_ms = SDL_GetTicks();
+        if(now_ms - product_brew_tick >= 1000u) {
+            product_brew_tick = now_ms;
+            sim_session_tick_brew(&product_session);
+            if(product_session.page == SIM_M1_BREW) host_brew_sample();
+            (void)refresh_session();
+        }
+    } else product_brew_tick = SDL_GetTicks();
+}
+
+#ifndef SIMULATOR_PRODUCT_TEST
 int main(int argc, char **argv)
 {
     ready_view = po_ui_ready_baseline;
@@ -407,13 +1004,21 @@ int main(int argc, char **argv)
             return EXIT_FAILURE;
         }
         if(showing_ready && !ready_help) {
-            puts("Ready keys: C link, H charge, [ ] battery, T manual tare, A matched container, N unmatched tare, O overload, R reject, U relabel, up/down net, left/right sheet or tare, 1-4 layout. Pull the top for parameters and the bottom for the last five cups.");
+            puts("Hardware keys: Z left (start, stop, or back), X right (tare, or zero and return from a result). Tab stands in for the mode swipe: mode 1 ready, mode 2 ready, settings, then mode 1. Up/down changes weight. Mode 1 ready keeps C H [ ] T A N O R U and 1-4.");
+            sim_session_init(&product_session);
+            product_session.net_decigrams = ready_view.net_decigrams;
+            product_brew_tick = SDL_GetTicks();
+            product_started = true;
             po_ui_ready_set_handlers(ready_params_changed, ready_tared, &note_until);
+            ready_restore_params();
             po_ui_ready_set_records(ready_records, 5);
             ready_help = true;
         }
-        if(showing_ready && ready_debug(&note_until) && !po_ui_ready_set(&ready_view))
+        if(showing_ready && product_session.page == SIM_M1_READY &&
+           ready_debug(&note_until) && !po_ui_ready_set(&ready_view))
             fputs("Could not update mode 1 ready.\n", stderr);
+        if(showing_ready && product_started)
+            poll_product_keys(initial_language, &note_until);
         if(options.screenshot_path && !language_pending &&
            (showing_language || showing_ready || state == PO_BOOT_HOLD)) {
             lv_refr_now(display);
@@ -429,6 +1034,7 @@ int main(int argc, char **argv)
         SDL_Delay(sleep_time);
     }
 }
+#endif /* SIMULATOR_PRODUCT_TEST */
 #endif
 #else
 #ifdef NDEBUG
