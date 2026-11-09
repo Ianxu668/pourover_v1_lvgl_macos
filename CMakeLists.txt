@@ -95,7 +95,7 @@ target_include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR} ${SDL2_INCLUDE_DIRS
 
 set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c src/hal/frame_stats.c
     src/simulator_preferences.c src/simulator_options.c src/simulator_capture.c
-    src/simulator_start.c src/simulator_session.c)
+    src/simulator_start.c src/simulator_session.c src/simulator_product.c)
 set(MAIN_LIBS lvgl lvgl::examples lvgl::demos lvgl::thorvg ${SDL2_LIBRARIES})
 
 # Create the main executable, depending on the FreeRTOS option
@@ -217,9 +217,10 @@ if(BUILD_TESTING AND UNIX)
   add_test(NAME simulator_start COMMAND simulator_start_test)
   set_tests_properties(simulator_start PROPERTIES TIMEOUT 5)
 
-  add_executable(simulator_ready_debug_test src/main.c)
-  target_compile_definitions(simulator_ready_debug_test PRIVATE
-    LV_CONF_INCLUDE_SIMPLE SIMULATOR_READY_DEBUG_TEST)
+  add_executable(simulator_ready_debug_test
+    tests/simulator_ready_debug_test.c
+    src/simulator_session.c)
+  target_compile_definitions(simulator_ready_debug_test PRIVATE LV_CONF_INCLUDE_SIMPLE)
   target_include_directories(simulator_ready_debug_test PRIVATE
     "${PRODUCT_UI_SOURCE_DIR}"
     "${PRODUCT_UI_SOURCE_DIR}/include")
@@ -229,7 +230,8 @@ if(BUILD_TESTING AND UNIX)
   add_executable(simulator_host_startup_test
     tests/simulator_host_startup_test.c
     src/simulator_options.c
-    src/simulator_preferences.c)
+    src/simulator_preferences.c
+    src/simulator_session.c)
   target_compile_definitions(simulator_host_startup_test PRIVATE
     LV_CONF_INCLUDE_SIMPLE SIMULATOR_HOST_STARTUP_TEST)
   target_include_directories(simulator_host_startup_test PRIVATE
@@ -241,6 +243,7 @@ if(BUILD_TESTING AND UNIX)
 
   add_executable(simulator_product_test
     tests/simulator_product_test.c
+    src/simulator_options.c
     src/simulator_preferences.c
     src/simulator_session.c)
   target_compile_definitions(simulator_product_test PRIVATE

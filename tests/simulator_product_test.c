@@ -5,7 +5,32 @@
 #include <assert.h>
 #include <stdio.h>
 #include "lvgl/lvgl.h"
-#include "../src/main.c"
+#include "pourover_ui.h"
+
+static bool reject_recipes, reject_cups, reject_language;
+
+static bool set_recipes(const po_m2_recipe_t *recipes, unsigned count)
+{
+    return !reject_recipes && po_ui_m2_ready_set_recipes(recipes, count);
+}
+
+static bool set_cups(const po_m2_cup_t *cups, unsigned count)
+{
+    return !reject_cups && po_ui_m2_ready_set_cups(cups, count);
+}
+
+static bool set_language(const po_ui_locale_t *language)
+{
+    return !reject_language && po_ui_set_language(language);
+}
+
+#define po_ui_m2_ready_set_recipes set_recipes
+#define po_ui_m2_ready_set_cups set_cups
+#define po_ui_set_language set_language
+#include "../src/simulator_product.c"
+#undef po_ui_m2_ready_set_recipes
+#undef po_ui_m2_ready_set_cups
+#undef po_ui_set_language
 
 static lv_display_t *display;
 static lv_group_t *group;
@@ -22,6 +47,16 @@ static void flush(lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
 static lv_obj_t *named(const char *name)
 {
     return lv_obj_find_by_name(lv_screen_active(), name);
+}
+
+static bool has_visible_label(lv_obj_t *object, const char *text)
+{
+    if(lv_obj_is_hidden(object)) return false;
+    if(lv_obj_check_type(object, &lv_label_class) && strcmp(lv_label_get_text(object), text) == 0)
+        return true;
+    for(unsigned i = 0; i < lv_obj_get_child_count(object); ++i)
+        if(has_visible_label(lv_obj_get_child(object, i), text)) return true;
+    return false;
 }
 
 /* A hidden parent layer hides its subtree; the object's own flag does not change. */
@@ -361,6 +396,167 @@ static void test_settings_back_parent_and_return(void)
     po_ui_destroy();
 }
 
+static void test_cli_product_previews(void)
+{
+    static const struct { const char *screen; const char *root; } cases[] = {
+        {"ready", "ready-surface"}, {"settings", "settings-root"},
+        {"m2-ready", "m2-ready-root"}, {"m2-brew", "m2-brew-root"},
+        {"m2-result", "m2-result-root"}, {"result", "result-root"},
+        {"container", "container-root"}, {"brew-settings", "brew-settings-root"}
+    };
+    for(unsigned i = 0; i < sizeof cases / sizeof cases[0]; ++i) {
+        simulator_options_t options;
+        char *args[] = {"simulator", "--screen", (char *)cases[i].screen};
+        assert(simulator_options_parse(3, args, &options));
+        ready_view = po_ui_ready_baseline;
+        if(options.page == SIM_M1_READY) assert(po_ui_show_ready(&ready_view, locale));
+        assert(start_product(&options, locale, &note_until));
+        assert(product_started && product_session.page == options.page);
+        assert(named(cases[i].root));
+        po_ui_destroy();
+    }
+}
+
+static void test_cli_m2_selection_survives_refresh(void)
+{
+    simulator_options_t options;
+    char *args[] = {"simulator", "--screen", "m2-ready", "--m2-surface", "pick",
+                     "--m2-tab", "history", "--m2-editor", "keypad"};
+    simulator_product_init();
+    assert(simulator_options_parse(9, args, &options));
+    assert(simulator_product_start(&options, locale, &note_until));
+    assert(m2_ready_mirror.surface == PO_M2_READY_PICK);
+    assert(m2_ready_mirror.pick_tab == PO_M2_PICK_HISTORY);
+    assert(m2_ready_mirror.editor == PO_M2_EDITOR_KEYPAD);
+    assert(named("m2-ready-cup-use"));
+    click("m2-ready-cup-use");
+    service();
+    assert(m2_ready_mirror.source == PO_M2_SOURCE_HISTORY);
+    assert(m2_ready_mirror.dose_decigrams == m2_cups[0].dose_decigrams);
+    assert(m2_ready_mirror.target_grams == m2_cups[0].weight_decigrams / 10);
+
+    m2_ready_mirror.surface = PO_M2_READY_PICK;
+    assert(po_ui_m2_ready_set(&m2_ready_mirror));
+    click("m2-ready-pick-recipe");
+    assert(has_visible_label(lv_screen_active(), m2_recipes[0].name));
+    click("m2-ready-pick-use");
+    service();
+    assert(m2_ready_mirror.source == PO_M2_SOURCE_RECIPE);
+    assert(strcmp(m2_ready_mirror.recipe_name, m2_recipes[0].name) == 0);
+    assert(m2_ready_mirror.recipe_segments == m2_recipes[0].segments);
+    assert(m2_ready_mirror.target_grams == m2_recipes[0].total_grams);
+    sim_session_add_weight(&product_session, 10);
+    service();
+    assert(refresh_session());
+    assert(has_visible_label(lv_screen_active(), m2_recipes[0].name));
+    assert(strcmp(m2_ready_mirror.recipe_name, m2_recipes[0].name) == 0);
+    /* The selected name is painted by the next host snapshot, not retained by the page. */
+    po_m2_ready_view_t view;
+    fill_m2_ready(&view);
+    assert(strcmp(view.recipe_name, m2_recipes[0].name) == 0);
+    po_ui_destroy();
+
+    char *wheel[] = {"simulator", "--screen", "m2-ready", "--m2-surface", "dose",
+                      "--m2-editor", "wheel"};
+    assert(simulator_options_parse(7, wheel, &options));
+    assert(simulator_product_start(&options, locale, &note_until));
+    assert(m2_ready_mirror.editor == PO_M2_EDITOR_WHEEL);
+    assert(named("m2-ready-wheel-0"));
+    po_ui_destroy();
+}
+
+static void test_product_start_propagates_setup_failures(void)
+{
+    simulator_options_t options;
+    char *args[] = {"simulator", "--screen", "m2-ready"};
+    assert(simulator_options_parse(3, args, &options));
+    reject_language = true;
+    assert(!simulator_product_start(&options, locale, &note_until));
+    reject_language = false;
+    reject_recipes = true;
+    assert(!simulator_product_start(&options, locale, &note_until));
+    reject_recipes = false;
+    reject_cups = true;
+    assert(!simulator_product_start(&options, locale, &note_until));
+    reject_cups = false;
+    assert(!simulator_product_started());
+    assert(simulator_product_start(&options, locale, &note_until));
+    po_ui_destroy();
+}
+
+static void test_cli_settings_shares_session_host(void)
+{
+    simulator_options_t options;
+    char *args[] = {"simulator", "--screen", "settings", "--settings-screen", "volume"};
+    assert(simulator_options_parse(5, args, &options));
+    settings_mirror_valid = false;
+    settings_mirror.volume_percent = 60;
+    assert(start_product(&options, locale, &note_until));
+    assert(settings_mirror_valid && product_session.page == SIM_SETTINGS);
+    assert(settings_mirror.volume_percent == po_ui_settings_baseline.volume_percent);
+    assert(settings_mirror.brightness_percent == po_ui_settings_baseline.brightness_percent);
+    assert(settings_mirror.auto_off_minutes == po_ui_settings_baseline.auto_off_minutes);
+    assert(strcmp(settings_mirror.device_name, po_ui_settings_baseline.device_name) == 0);
+    assert(settings_mirror.screen == PO_SET_VOLUME);
+    click("settings-volume-plus1");
+    service();
+    assert(settings_mirror.volume_percent == 61);
+    press(SIM_KEY_LEFT);
+    service();
+    assert(settings_mirror.screen == PO_SET_PREFS);
+    press(SIM_KEY_LEFT);
+    service();
+    assert(settings_mirror.screen == PO_SET_HOME);
+    press(SIM_SWIPE_NEXT);
+    assert(product_session.page == SIM_M1_READY && named("ready-surface"));
+    press(SIM_SWIPE_NEXT);
+    press(SIM_SWIPE_NEXT);
+    assert(product_session.page == SIM_SETTINGS && settings_mirror.volume_percent == 61);
+    po_ui_destroy();
+}
+
+static void confirm_history(void)
+{
+    lv_obj_t *card = named("settings-history-ask");
+    assert(card);
+    lv_obj_send_event(lv_obj_get_child(card, -1), LV_EVENT_CLICKED, NULL);
+}
+
+static void test_history_confirmation_returns_to_list(void)
+{
+    start_mode1_ready();
+    press(SIM_SWIPE_NEXT);
+    press(SIM_SWIPE_NEXT);
+    settings_mirror.history_count = 3;
+    for(int i = 0; i < 3; ++i) settings_mirror.history[i].cup_index = i + 1;
+    on_settings_event(&(po_settings_event_t){PO_SET_ACT_OPEN, PO_SET_HOME, PO_SET_HISTORY}, NULL);
+    service();
+    on_settings_event(&(po_settings_event_t){PO_SET_ACT_HISTORY_DELETE_ASK, PO_SET_HISTORY, 1}, NULL);
+    service();
+    assert(named("settings-history-ask"));
+    confirm_history();
+    assert(settings_mirror.history_count == 2);
+    assert(settings_mirror.history[0].cup_index == 1);
+    assert(settings_mirror.history[1].cup_index == 3);
+    assert(settings_screen_pending && settings_view_dirty);
+    assert(named("settings-history-ask")); /* Navigation waits for GUI dispatch. */
+    service();
+    assert(settings_mirror.screen == PO_SET_HISTORY);
+    assert(!named("settings-history-ask"));
+    on_settings_event(&(po_settings_event_t){PO_SET_ACT_HISTORY_CLEAR_ASK, PO_SET_HISTORY, 0}, NULL);
+    service();
+    confirm_history();
+    assert(settings_screen_pending && settings_view_dirty);
+    service();
+    assert(settings_mirror.history_count == 0 && settings_mirror.screen == PO_SET_HISTORY);
+    assert(!named("settings-history-ask") && named("settings-history-empty"));
+    lv_tick_inc(10001);
+    lv_timer_handler();
+    service();
+    assert(settings_mirror.screen == PO_SET_HISTORY);
+    po_ui_destroy();
+}
+
 /* Ready X tare zeroes like the T key: container cleared, net zero, TARED note. */
 static void test_ready_tare_clears_container(void)
 {
@@ -379,6 +575,7 @@ static void test_ready_tare_clears_container(void)
 
 int main(void)
 {
+    simulator_product_init();
     locale = po_ui_locale_find("en");
     lv_init();
     display = lv_display_create(960, 376);
@@ -397,6 +594,11 @@ int main(void)
     test_m1_result_save_and_discard();
     test_m1_brew_target_sheet_survives();
     test_settings_back_parent_and_return();
+    test_cli_product_previews();
+    test_cli_m2_selection_survives_refresh();
+    test_product_start_propagates_setup_failures();
+    test_cli_settings_shares_session_host();
+    test_history_confirmation_returns_to_list();
     test_ready_tare_clears_container();
 
     lv_group_delete(group);

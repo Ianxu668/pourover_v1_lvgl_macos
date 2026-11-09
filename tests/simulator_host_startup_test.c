@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include "lvgl/lvgl.h"
 #include "po_ready_assets.h"
+#include "../src/simulator_product.c"
 #include "../src/main.c"
 
 static lv_display_t *display;

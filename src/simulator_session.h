@@ -8,13 +8,16 @@
  * the product enters the next mode by a horizontal swipe. */
 
 typedef enum {
+    SIM_PAGE_NONE = -1,
     SIM_M1_READY = 0,
     SIM_M1_BREW,
     SIM_M1_RESULT,
     SIM_M2_READY,
     SIM_M2_BREW,
     SIM_M2_RESULT,
-    SIM_SETTINGS
+    SIM_SETTINGS,
+    SIM_CONTAINER,
+    SIM_BREW_SETTINGS
 } sim_page_t;
 
 typedef enum {
