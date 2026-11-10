@@ -17,6 +17,7 @@ static void settings_mirror_initialize(const po_ui_locale_t *locale)
     settings_mirror.connected = true;
     settings_mirror.language = locale;
     snprintf(settings_mirror.serial, sizeof settings_mirror.serial, "MS24001128");
+    snprintf(settings_mirror.sync_time, sizeof settings_mirror.sync_time, "11-03 09:12");
     settings_mirror.history[0] = (po_settings_history_t){
         .month = 11, .day = 3, .cup_index = 2, .mode = 1, .seconds = 168,
         .water_decigrams = 2486, .dose_decigrams = 0, .avg_flow_decigrams = 14,

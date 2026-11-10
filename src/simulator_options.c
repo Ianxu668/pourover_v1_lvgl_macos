@@ -67,7 +67,7 @@ void simulator_options_usage(const char *program)
 bool simulator_options_parse(int argc, char **argv, simulator_options_t *options)
 {
     *options = (simulator_options_t){.screen = SCREEN_AUTO, .page = SIM_PAGE_NONE,
-                                     .boot_animation = PO_BOOT_H, .settings_screen = PO_SET_HOME,
+                                     .boot_animation = PO_BOOT_G, .settings_screen = PO_SET_HOME,
                                      .language = po_ui_locale_find("en")};
     bool boot_animation_set = false;
     bool settings_screen_set = false;
@@ -198,7 +198,7 @@ int main(void)
     simulator_options_t options;
     char *defaults[] = {"simulator"};
     assert(simulator_options_parse(1, defaults, &options));
-    assert(options.boot_animation == PO_BOOT_H && options.screen == SCREEN_AUTO);
+    assert(options.boot_animation == PO_BOOT_G && options.screen == SCREEN_AUTO);
     assert(!options.language_set && options.language == po_ui_locale_find("en"));
     for(unsigned variant = 0; variant < PO_BOOT_COUNT; ++variant) {
         char *names[] = {"A", "G", "H"};

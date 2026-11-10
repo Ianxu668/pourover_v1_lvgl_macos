@@ -35,6 +35,12 @@ extern unsigned host_brew_count;
 void host_brew_begin(void);
 void host_brew_sample(void);
 void host_brew_follow(void);
+/* Mode-1 brew replays one canned pour. The ready curve switch still picks the graphic. */
+void m1_brew_pour_arm(void);
+void m1_brew_pour_cancel(void);
+void m1_brew_pour_step(void);
+bool m1_brew_pour_running(void);
+bool m1_brew_pour_poll(uint32_t now_ms);
 bool m1_brew_present(void);
 bool m1_brew_refresh(void);
 bool m1_result_present(void);
