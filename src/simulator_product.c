@@ -235,6 +235,7 @@ void simulator_product_init(void)
 bool simulator_product_start(const simulator_options_t *options, const po_ui_locale_t *locale,
                              uint32_t *note_until)
 {
+    po_ui_set_page_motion(true);
     return start_product(options, locale, note_until);
 }
 
