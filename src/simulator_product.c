@@ -208,13 +208,20 @@ static void poll_product_keys(const po_ui_locale_t *locale, uint32_t *note_until
     if(count > 0) memcpy(product_was, now, (size_t)count);
     if(product_session.page == SIM_M1_BREW || product_session.page == SIM_M2_BREW) {
         uint32_t now_ms = SDL_GetTicks();
+        if(product_session.page == SIM_M1_BREW && m1_brew_pour_poll(now_ms) && !refresh_session())
+            fputs("Could not refresh the product page.\n", stderr);
         if(now_ms - product_brew_tick >= 1000u) {
             product_brew_tick = now_ms;
             sim_session_tick_brew(&product_session);
-            host_brew_sample();
+            /* While the script is running it writes g/s itself. A 1 s delta
+             * would replace that with the small slice added since the last step. */
+            if(!m1_brew_pour_running()) host_brew_sample();
             (void)refresh_session();
         }
-    } else product_brew_tick = SDL_GetTicks();
+    } else {
+        product_brew_tick = SDL_GetTicks();
+        m1_brew_pour_cancel();
+    }
 }
 
 void simulator_product_init(void)

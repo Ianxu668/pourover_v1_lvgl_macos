@@ -6,6 +6,82 @@ unsigned host_brew_count;
 static int host_brew_origin;
 static int host_brew_last;
 
+/* Mode-1 brew entry script. Gram tenths of g/s, one value every 250 ms.
+ * 300 is the 30 g/s graphic cap and is held so the crest can reach the top row. */
+#define M1_POUR_STEP_MS 250u
+static const int m1_pour_dg_s[] = {
+    0, 80, 0, 220, 20, 150, 0,
+    300, 300, 300, 300, 300, 300, 300, 300,
+    0, 300, 40, 180, 0, 250, 10,
+    300, 300, 300, 300, 300, 300, 300, 300,
+    0, 80, 0, 220, 20, 150, 0,
+    300, 300, 300, 300, 300, 300, 300, 300
+};
+static unsigned m1_pour_at;
+static uint32_t m1_pour_due;
+static bool m1_pour_on;
+
+void m1_brew_pour_arm(void)
+{
+    m1_pour_on = true;
+    m1_pour_at = 0;
+    m1_pour_due = 0;
+}
+
+void m1_brew_pour_cancel(void)
+{
+    m1_pour_on = false;
+    m1_pour_at = 0;
+    m1_pour_due = 0;
+}
+
+bool m1_brew_pour_running(void)
+{
+    return m1_pour_on;
+}
+
+void m1_brew_pour_step(void)
+{
+    int rate;
+    int gain;
+    int next;
+    if(!m1_pour_on) return;
+    if(m1_pour_at >= sizeof m1_pour_dg_s / sizeof m1_pour_dg_s[0]) {
+        m1_pour_on = false;
+        return;
+    }
+    rate = m1_pour_dg_s[m1_pour_at++];
+    gain = (int)((int64_t)rate * M1_POUR_STEP_MS / 1000);
+    next = product_session.net_decigrams + gain;
+    if(next > 99999) next = 99999;
+    if(next < -99999) next = -99999;
+    product_session.net_decigrams = next;
+    if(host_brew_count == 0) {
+        host_brew[0].weight_decigrams = host_brew_origin;
+        host_brew[0].flow_decigrams = 0;
+        host_brew_count = 1;
+    }
+    if(host_brew_count >= HOST_BREW_CAP) {
+        host_brew[HOST_BREW_CAP - 1u].weight_decigrams = next;
+        host_brew[HOST_BREW_CAP - 1u].flow_decigrams = rate;
+    }
+    else {
+        host_brew[host_brew_count].weight_decigrams = next;
+        host_brew[host_brew_count].flow_decigrams = rate;
+        host_brew_count++;
+    }
+    host_brew_last = next;
+}
+
+bool m1_brew_pour_poll(uint32_t now_ms)
+{
+    if(!m1_pour_on) return false;
+    if(now_ms < m1_pour_due) return false;
+    m1_pour_due = now_ms + M1_POUR_STEP_MS;
+    m1_brew_pour_step();
+    return true;
+}
+
 void host_brew_begin(void)
 {
     host_brew_count = 0;
@@ -109,6 +185,7 @@ bool m1_brew_present(void)
     brew_view_t view;
     host_brew_begin();
     m1_brew_target_sheet = false;
+    m1_brew_pour_arm();
     fill_m1_brew(&view);
     if(!po_ui_show_brew(&view)) return false;
     po_ui_brew_set_handlers(on_m1_brew_target, on_m1_brew_target_toggle, NULL);
@@ -146,4 +223,5 @@ void brew_reset(void)
     host_brew_last = 0;
     m1_brew_target_sheet = false;
     m1_result_save_open = false;
+    m1_brew_pour_cancel();
 }
