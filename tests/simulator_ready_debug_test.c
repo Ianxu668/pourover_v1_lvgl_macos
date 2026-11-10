@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 #include "lvgl/lvgl.h"
+#include "../src/simulator_product_ready.c"
+#include "../src/simulator_product_brew.c"
+#include "../src/simulator_product_m2.c"
+#include "../src/simulator_product_settings.c"
 #include "../src/simulator_product.c"
 
 /* Tare keys run on a synthetic keyboard; release is a second call with the key up. */

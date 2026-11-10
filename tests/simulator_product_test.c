@@ -27,6 +27,10 @@ static bool set_language(const po_ui_locale_t *language)
 #define po_ui_m2_ready_set_recipes set_recipes
 #define po_ui_m2_ready_set_cups set_cups
 #define po_ui_set_language set_language
+#include "../src/simulator_product_ready.c"
+#include "../src/simulator_product_brew.c"
+#include "../src/simulator_product_m2.c"
+#include "../src/simulator_product_settings.c"
 #include "../src/simulator_product.c"
 #undef po_ui_m2_ready_set_recipes
 #undef po_ui_m2_ready_set_cups
@@ -344,6 +348,33 @@ static void test_m1_brew_target_sheet_survives(void)
     po_ui_destroy();
 }
 
+/* M1 Brew: a negative reading cuts the weight series at the first negative
+ * sample and a later positive sample starts a second drawn segment. */
+static void test_m1_brew_curve_break_follows_weight(void)
+{
+    lv_obj_t *line;
+    start_mode1_ready();
+    press(SIM_KEY_LEFT);
+    assert(product_session.page == SIM_M1_BREW);
+
+    sim_session_add_weight(&product_session, -1420);
+    host_brew_sample();
+    product_view_dirty = true;
+    service();
+    line = named("brew-weight-line");
+    assert(line && !lv_obj_is_hidden(line));
+    /* The run stops before the negative sample: one segment, origin only. */
+    assert(*(unsigned *)lv_obj_get_user_data(named("brew-plot")) == 1);
+
+    sim_session_add_weight(&product_session, 2440);
+    host_brew_sample();
+    product_view_dirty = true;
+    service();
+    /* The recovered reading re-enters the drawn set as a second segment. */
+    assert(*(unsigned *)lv_obj_get_user_data(named("brew-plot")) == 2);
+    po_ui_destroy();
+}
+
 /* Settings: BACK pops to the parent screen; home left falls through to the session. */
 static void test_settings_back_parent_and_return(void)
 {
@@ -557,6 +588,22 @@ static void test_history_confirmation_returns_to_list(void)
     po_ui_destroy();
 }
 
+/* Toast expiry after leaving settings updates the mirror without a failed push. */
+static void test_settings_toast_expires_off_page(void)
+{
+    start_mode1_ready();
+    press(SIM_SWIPE_NEXT);
+    press(SIM_SWIPE_NEXT);
+    assert(product_session.page == SIM_SETTINGS);
+    settings_mirror.history_toast = true;
+    settings_toast_until = 0;
+    press(SIM_SWIPE_NEXT);
+    assert(product_session.page == SIM_M1_READY);
+    assert(settings_service());
+    assert(!settings_mirror.history_toast);
+    po_ui_destroy();
+}
+
 /* Ready X tare zeroes like the T key: container cleared, net zero, TARED note. */
 static void test_ready_tare_clears_container(void)
 {
@@ -593,12 +640,14 @@ int main(void)
     test_m2_result_flows();
     test_m1_result_save_and_discard();
     test_m1_brew_target_sheet_survives();
+    test_m1_brew_curve_break_follows_weight();
     test_settings_back_parent_and_return();
     test_cli_product_previews();
     test_cli_m2_selection_survives_refresh();
     test_product_start_propagates_setup_failures();
     test_cli_settings_shares_session_host();
     test_history_confirmation_returns_to_list();
+    test_settings_toast_expires_off_page();
     test_ready_tare_clears_container();
 
     lv_group_delete(group);

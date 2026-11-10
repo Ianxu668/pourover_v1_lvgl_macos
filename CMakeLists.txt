@@ -95,7 +95,9 @@ target_include_directories(lvgl PUBLIC ${PROJECT_SOURCE_DIR} ${SDL2_INCLUDE_DIRS
 
 set(MAIN_SOURCES src/mouse_cursor_icon.c src/hal/hal.c src/hal/frame_stats.c
     src/simulator_preferences.c src/simulator_options.c src/simulator_capture.c
-    src/simulator_start.c src/simulator_session.c src/simulator_product.c)
+    src/simulator_start.c src/simulator_session.c
+    src/simulator_product.c src/simulator_product_ready.c src/simulator_product_brew.c
+    src/simulator_product_m2.c src/simulator_product_settings.c)
 set(MAIN_LIBS lvgl lvgl::examples lvgl::demos lvgl::thorvg ${SDL2_LIBRARIES})
 
 # Create the main executable, depending on the FreeRTOS option

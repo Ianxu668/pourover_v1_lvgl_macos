@@ -8,6 +8,10 @@
 #include <unistd.h>
 #include "lvgl/lvgl.h"
 #include "po_ready_assets.h"
+#include "../src/simulator_product_ready.c"
+#include "../src/simulator_product_brew.c"
+#include "../src/simulator_product_m2.c"
+#include "../src/simulator_product_settings.c"
 #include "../src/simulator_product.c"
 #include "../src/main.c"
 
