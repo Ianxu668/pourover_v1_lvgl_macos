@@ -147,17 +147,6 @@ static void test_selected_locale_reaches_ready(char *path)
     assert(saved == po_ui_locale_find("zh-Hans"));
 }
 
-static lv_obj_t *find_image_source(lv_obj_t *object, const void *source)
-{
-    if(lv_obj_check_type(object, &lv_image_class) && lv_image_get_src(object) == source)
-        return object;
-    for(uint32_t i = 0; i < lv_obj_get_child_count(object); ++i) {
-        lv_obj_t *found = find_image_source(lv_obj_get_child(object, i), source);
-        if(found) return found;
-    }
-    return NULL;
-}
-
 static void test_curve_survives_language_handoff(char *path)
 {
     ready_view = po_ui_ready_baseline;
@@ -179,8 +168,11 @@ static void test_curve_survives_language_handoff(char *path)
     assert(startup_dispatch(&language_pending, &showing_language, &showing_ready,
                             po_ui_locale_find("en"), path));
     assert(showing_ready);
-    assert(find_image_source(lv_screen_active(), &po_asset_param_curve_off));
-    assert(!find_image_source(lv_screen_active(), &po_asset_param_curve_on));
+    lv_obj_t *curve = lv_obj_find_by_name(lv_screen_active(), "ready-curve-switch");
+    assert(curve);
+    lv_obj_update_layout(curve);
+    assert(lv_obj_get_x(lv_obj_get_child(curve, 0)) == 8);
+    assert(!ready_curve);
 }
 
 int main(void)

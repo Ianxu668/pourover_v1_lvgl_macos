@@ -135,14 +135,16 @@ static void test_m2_ready_state_survives_refresh(void)
     assert(view.ounces == (ready_view.unit == PO_READY_UNIT_OZ));
 
     /* A full-screen editor defers the dynamic set so the draft and Back path survive. */
-    click("m2-ready-row-dose");
-    assert(product_key_consumed(SIM_KEY_LEFT));
-    sim_session_add_weight(&product_session, 10);
-    service();
-    assert(product_key_consumed(SIM_KEY_LEFT));
     assert(po_ui_m2_ready_key_left());
     service();
-    assert(visible("m2-ready-params"));
+    click("m2-ready-open-dose");
+    sim_session_add_weight(&product_session, 10);
+    service();
+    assert(visible("m2-ready-dose-confirm"));
+    assert(product_key_consumed(SIM_KEY_LEFT));
+    assert(!po_ui_m2_ready_key_left());
+    service();
+    assert(!visible("m2-ready-params"));
     assert(m2_ready_mirror.dose_decigrams == 250);
     assert(m2_ready_mirror.ratio_tenths == 200);
     fill_m2_ready(&view); /* leave MAIN for the next test */
@@ -178,7 +180,7 @@ static void test_m2_brew_state(void)
                                           .surface = PO_M2_BREW_CURVE, .value = 0}, NULL);
     sim_session_tick_brew(&product_session);
     assert(refresh_session()); /* the per-second brew tick */
-    assert(visible("m2-brew-curve-back"));
+    assert(!visible("m2-brew-curve-back"));
 
     on_m2_brew_event(&(po_m2_brew_event_t){.action = PO_M2_BREW_ACT_DOSE,
                                           .surface = PO_M2_BREW_MAIN, .value = 220}, NULL);
@@ -191,6 +193,18 @@ static void test_m2_brew_state(void)
     assert(view.ounces == true);
     assert(view.dose_decigrams == 220);
     assert(view.elapsed_seconds == product_session.elapsed_seconds);
+    m2_brew_mirror.surface = PO_M2_BREW_DURATION;
+    m2_brew_mirror.duration_left = 8;
+    product_view_dirty = true;
+    service();
+    press(SIM_KEY_RIGHT);
+    service();
+    assert(m2_brew_mirror.surface == PO_M2_BREW_MAIN);
+    assert(product_session.page == SIM_M2_BREW);
+    product_session.net_decigrams = 1234;
+    press(SIM_KEY_RIGHT);
+    service();
+    assert(product_session.net_decigrams == 0);
     po_ui_destroy();
 }
 
@@ -323,7 +337,7 @@ static void test_m1_result_save_and_discard(void)
     po_ui_destroy();
 }
 
-/* M1 Brew: target sheet and target toggle survive the per-second refresh. */
+/* Retired M1 target-sheet requests never reopen a touch surface. */
 static void test_m1_brew_target_sheet_survives(void)
 {
     start_mode1_ready();
@@ -334,16 +348,10 @@ static void test_m1_brew_target_sheet_survives(void)
 
     on_m1_brew_target(NULL);
     service();
-    assert(visible("brew-target-sheet"));
-
-    on_m1_brew_target_toggle(NULL);
-    assert(!ready_view.show_target);
-
+    assert(!visible("brew-target-sheet"));
     sim_session_tick_brew(&product_session);
     service();
-    assert(visible("brew-target-sheet"));
-    assert(!ready_view.show_target);
-    on_m1_brew_target_toggle(NULL);
+    assert(!visible("brew-target-sheet"));
     assert(ready_view.show_target);
     po_ui_destroy();
 }
@@ -624,6 +632,43 @@ static void test_ready_tare_clears_container(void)
     po_ui_destroy();
 }
 
+static void test_m2_preferences_share_settings(void)
+{
+    po_m2_ready_view_t ready;
+    po_m2_brew_view_t brew;
+    m2_reset();
+    assert(!m2_show_remain);
+    assert(m2_ready_present());
+    on_m2_ready_event(&(po_m2_ready_event_t){.action = PO_M2_READY_REMAIN,
+                                            .surface = PO_M2_READY_PARAMS, .value = 1}, NULL);
+    on_m2_ready_event(&(po_m2_ready_event_t){.action = PO_M2_READY_AUTOSTART,
+                                            .surface = PO_M2_READY_PARAMS, .value = 0}, NULL);
+    assert(settings_present(locale));
+    assert(settings_mirror.show_remain && !settings_mirror.autostart);
+    settings_mirror.screen = PO_SET_BREW;
+    settings_mirror.brew_tab = 2;
+    assert(po_ui_settings_set(&settings_mirror));
+    assert(named("settings-remaining"));
+    click("settings-remaining");
+    assert(!m2_show_remain);
+    fill_m2_ready(&ready);
+    assert(!ready.show_remain && !ready.autostart);
+    on_settings_event(&(po_settings_event_t){.action = PO_SET_ACT_REMAIN, .value = 1}, NULL);
+    m2_brew_mirror = po_ui_m2_brew_baseline;
+    ready_view.unit = PO_READY_UNIT_GRAM;
+    product_session.net_decigrams = 1520;
+    fill_m2_brew(&brew);
+    assert(brew.show_remain && brew.remain_grams == 166);
+    ready_view.unit = PO_READY_UNIT_OZ;
+    product_session.net_decigrams = 100;
+    fill_m2_brew(&brew);
+    assert(brew.remain_grams == 290);
+    m2_brew_mirror.target_grams = 0;
+    fill_m2_brew(&brew);
+    assert(!brew.show_remain);
+    po_ui_destroy();
+}
+
 int main(void)
 {
     simulator_product_init();
@@ -653,6 +698,7 @@ int main(void)
     test_history_confirmation_returns_to_list();
     test_settings_toast_expires_off_page();
     test_ready_tare_clears_container();
+    test_m2_preferences_share_settings();
 
     lv_group_delete(group);
     lv_display_delete(display);

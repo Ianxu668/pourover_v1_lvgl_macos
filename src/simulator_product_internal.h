@@ -47,6 +47,10 @@ bool m1_result_present(void);
 bool m1_result_refresh(void);
 void brew_reset(void);
 
+/* Mode 2 preferences shared with Settings; host-owned, never page-local. */
+extern bool m2_autostart;
+extern bool m2_show_remain;
+
 /* Mode 2 pages (simulator_product_m2.c). */
 bool m2_ready_present(void);
 bool m2_ready_refresh(void);

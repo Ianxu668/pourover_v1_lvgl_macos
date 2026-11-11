@@ -107,7 +107,12 @@ static void on_settings_event(const po_settings_event_t *event, void *context)
     case PO_SET_ACT_WAKE: settings_mirror.cup_wake = event->value != 0; break;
     case PO_SET_ACT_CURVE: settings_mirror.curve_enabled = event->value != 0; break;
     case PO_SET_ACT_M1_TARE: settings_mirror.m1_auto_tare = event->value != 0; break;
-    case PO_SET_ACT_AUTOSTART: settings_mirror.autostart = event->value != 0; break;
+    case PO_SET_ACT_AUTOSTART:
+        settings_mirror.autostart = m2_autostart = event->value != 0;
+        break;
+    case PO_SET_ACT_REMAIN:
+        settings_mirror.show_remain = m2_show_remain = event->value != 0;
+        break;
     case PO_SET_ACT_DOSE_DETECT: settings_mirror.dose_detect = event->value != 0; break;
     case PO_SET_ACT_FILTER: settings_mirror.filter_detect = event->value != 0; break;
     case PO_SET_ACT_M2_TARE: settings_mirror.m2_auto_tare = event->value != 0; break;
@@ -180,6 +185,8 @@ bool settings_present(const po_ui_locale_t *locale)
 {
     if(!settings_mirror_valid) settings_mirror_initialize(locale);
     settings_mirror.ounces = ready_view.unit == PO_READY_UNIT_OZ;
+    settings_mirror.autostart = m2_autostart;
+    settings_mirror.show_remain = m2_show_remain;
     if(!po_ui_show_settings(&settings_mirror,
                             settings_mirror.language ? settings_mirror.language : locale))
         return false;

@@ -2,6 +2,9 @@
 #include <string.h>
 #include "simulator_product_internal.h"
 
+bool m2_autostart = true;
+bool m2_show_remain;
+
 static po_m2_ready_view_t m2_ready_mirror;
 static bool m2_ready_mirror_valid;
 static po_m2_brew_view_t m2_brew_mirror;
@@ -36,6 +39,8 @@ static const po_m2_cup_t m2_cups[] = {
 static void fill_m2_ready(po_m2_ready_view_t *view)
 {
     *view = m2_ready_mirror;
+    view->autostart = m2_autostart;
+    view->show_remain = m2_show_remain;
     view->net_decigrams = product_session.net_decigrams;
     view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
 }
@@ -43,6 +48,12 @@ static void fill_m2_ready(po_m2_ready_view_t *view)
 static void fill_m2_brew(po_m2_brew_view_t *view)
 {
     *view = m2_brew_mirror;
+    view->show_remain = m2_show_remain && view->target_grams > 0 && !view->simple;
+    int poured_grams = ready_view.unit == PO_READY_UNIT_OZ
+                           ? (int)((int64_t)product_session.net_decigrams * 283495 / 1000000)
+                           : product_session.net_decigrams / 10;
+    view->remain_grams = view->target_grams - poured_grams;
+    if(view->remain_grams < 0) view->remain_grams = 0;
     view->elapsed_seconds = product_session.elapsed_seconds;
     view->net_decigrams = product_session.net_decigrams;
     view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
@@ -73,7 +84,10 @@ static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
     m2_ready_mirror.surface = event->surface;
     switch(event->action) {
     case PO_M2_READY_AUTOSTART:
-        m2_ready_mirror.autostart = event->value != 0;
+        m2_autostart = event->value != 0;
+        break;
+    case PO_M2_READY_REMAIN:
+        m2_show_remain = event->value != 0;
         break;
     case PO_M2_READY_ACT_DOSE:
         m2_ready_mirror.dose_decigrams = event->value;
@@ -141,6 +155,7 @@ static void on_m2_brew_event(const po_m2_brew_event_t *event, void *context)
         m2_brew_mirror.dose_decigrams = event->value;
         break;
     case PO_M2_BREW_CONTINUE:
+        m2_brew_mirror.surface = PO_M2_BREW_MAIN;
         m2_brew_mirror.duration_left = -1;
         product_view_dirty = true;
         break;
@@ -285,6 +300,8 @@ void m2_start(const simulator_options_t *options)
 
 void m2_reset(void)
 {
+    m2_autostart = true;
+    m2_show_remain = false;
     memset(&m2_ready_mirror, 0, sizeof m2_ready_mirror);
     m2_ready_mirror_valid = false;
     memset(&m2_brew_mirror, 0, sizeof m2_brew_mirror);
