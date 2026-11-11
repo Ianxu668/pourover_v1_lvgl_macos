@@ -548,9 +548,9 @@ static void test_cli_settings_shares_session_host(void)
 
 static void confirm_history(void)
 {
-    lv_obj_t *card = named("settings-history-ask");
-    assert(card);
-    lv_obj_send_event(lv_obj_get_child(card, -1), LV_EVENT_CLICKED, NULL);
+    lv_obj_t *ok = named("settings-confirm-delete");
+    assert(ok);
+    lv_obj_send_event(ok, LV_EVENT_CLICKED, NULL);
 }
 
 static void test_history_confirmation_returns_to_list(void)
@@ -572,6 +572,8 @@ static void test_history_confirmation_returns_to_list(void)
     assert(settings_screen_pending && settings_view_dirty);
     assert(named("settings-history-ask")); /* Navigation waits for GUI dispatch. */
     service();
+    lv_tick_inc(200); /* Let the modal close animation delete the ask card. */
+    lv_timer_handler();
     assert(settings_mirror.screen == PO_SET_HISTORY);
     assert(!named("settings-history-ask"));
     on_settings_event(&(po_settings_event_t){PO_SET_ACT_HISTORY_CLEAR_ASK, PO_SET_HISTORY, 0}, NULL);
@@ -579,6 +581,8 @@ static void test_history_confirmation_returns_to_list(void)
     confirm_history();
     assert(settings_screen_pending && settings_view_dirty);
     service();
+    lv_tick_inc(200);
+    lv_timer_handler();
     assert(settings_mirror.history_count == 0 && settings_mirror.screen == PO_SET_HISTORY);
     assert(!named("settings-history-ask") && named("settings-history-empty"));
     lv_tick_inc(10001);
