@@ -6,8 +6,8 @@ unsigned host_brew_count;
 static int host_brew_origin;
 static int host_brew_last;
 
-/* Mode-1 brew entry script. Gram tenths of g/s, one value every 250 ms.
- * 300 is the 30 g/s graphic cap and is held so the crest can reach the top row. */
+/* Mode-1 pour input updates every 250 ms; curve history remains one sample
+ * per second. Physical input can exceed the UI's 8 g/s visual saturation. */
 #define M1_POUR_STEP_MS 250u
 static const int m1_pour_dg_s[] = {
     0, 80, 0, 220, 20, 150, 0,
@@ -20,9 +20,12 @@ static const int m1_pour_dg_s[] = {
 static unsigned m1_pour_at;
 static uint32_t m1_pour_due;
 static bool m1_pour_on;
+static int m1_pour_rate;
+static result_sample_t m1_result_samples[HOST_BREW_CAP];
 
 void m1_brew_pour_arm(void)
 {
+    m1_pour_rate = 0;
     m1_pour_on = true;
     m1_pour_at = 0;
     m1_pour_due = 0;
@@ -30,6 +33,7 @@ void m1_brew_pour_arm(void)
 
 void m1_brew_pour_cancel(void)
 {
+    m1_pour_rate = 0;
     m1_pour_on = false;
     m1_pour_at = 0;
     m1_pour_due = 0;
@@ -51,6 +55,7 @@ void m1_brew_pour_step(void)
         return;
     }
     rate = m1_pour_dg_s[m1_pour_at++];
+    m1_pour_rate = rate;
     gain = (int)((int64_t)rate * M1_POUR_STEP_MS / 1000);
     next = product_session.net_decigrams + gain;
     if(next > 99999) next = 99999;
@@ -61,16 +66,6 @@ void m1_brew_pour_step(void)
         host_brew[0].flow_decigrams = 0;
         host_brew_count = 1;
     }
-    if(host_brew_count >= HOST_BREW_CAP) {
-        host_brew[HOST_BREW_CAP - 1u].weight_decigrams = next;
-        host_brew[HOST_BREW_CAP - 1u].flow_decigrams = rate;
-    }
-    else {
-        host_brew[host_brew_count].weight_decigrams = next;
-        host_brew[host_brew_count].flow_decigrams = rate;
-        host_brew_count++;
-    }
-    host_brew_last = next;
 }
 
 bool m1_brew_pour_poll(uint32_t now_ms)
@@ -93,6 +88,8 @@ void host_brew_sample(void)
 {
     int weight = product_session.net_decigrams;
     int flow = weight - host_brew_last;
+    if(product_session.page == SIM_M1_BREW && m1_pour_on && m1_pour_at)
+        flow = m1_pour_rate;
     if(flow < 0) flow = 0;
     if(host_brew_count == 0) {
         host_brew[0].weight_decigrams = host_brew_origin;
@@ -106,11 +103,15 @@ void host_brew_sample(void)
     host_brew_count++;
 }
 
-void host_brew_follow(void)
+void host_brew_follow(bool tared)
 {
     int weight = product_session.net_decigrams;
     int previous;
     int flow;
+    if(tared) {
+        host_brew_origin = weight;
+        host_brew_last = weight;
+    }
     if(host_brew_count == 0) return;
     previous = host_brew_count > 1 ? host_brew[host_brew_count - 2u].weight_decigrams : weight;
     flow = weight - previous;
@@ -123,18 +124,32 @@ void host_brew_follow(void)
 static bool m1_brew_target_sheet;
 static bool m1_result_save_open;
 
+static int m1_poured_water(void)
+{
+    int water = product_session.net_decigrams - host_brew_origin;
+    return water > 0 ? water : 0;
+}
+
 static void fill_m1_brew(brew_view_t *view)
 {
     memset(view, 0, sizeof(*view));
     view->elapsed_seconds = product_session.elapsed_seconds;
     view->net_decigrams = product_session.net_decigrams;
-    view->flow_decigrams = host_brew_count ? host_brew[host_brew_count - 1u].flow_decigrams : 0;
+    view->flow_decigrams = m1_pour_on && m1_pour_at ? m1_pour_rate
+        : host_brew_count ? host_brew[host_brew_count - 1u].flow_decigrams : 0;
     view->show_curve = ready_curve;
     view->unlocked = true;
     view->target_enabled = ready_view.show_target;
     view->target_grams = ready_view.target_grams;
-    view->target_sheet = m1_brew_target_sheet;
     view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
+    int64_t water = m1_poured_water();
+    if(view->target_enabled && view->target_grams > 0 && water > 0) {
+        int64_t progress = view->ounces
+            ? water * 28349523125LL / ((int64_t)view->target_grams * 100000000LL)
+            : water * 100 / view->target_grams;
+        view->progress_permille = progress > 1000 ? 1000u : (unsigned)progress;
+    }
+    view->target_sheet = m1_brew_target_sheet;
     view->sample_count = host_brew_count;
     view->samples = host_brew_count ? host_brew : NULL;
 }
@@ -143,11 +158,21 @@ static void fill_m1_result(result_view_t *view)
 {
     memset(view, 0, sizeof(*view));
     view->elapsed_seconds = (int)product_session.elapsed_seconds;
-    view->total_water_decigrams = product_session.net_decigrams;
+    view->total_water_decigrams = m1_poured_water();
     view->target_grams = ready_view.show_target ? ready_view.target_grams : 0;
     view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
     view->save_open = m1_result_save_open;
     view->save_seconds_left = m1_result_save_open ? 30 : -1;
+    view->sample_count = host_brew_count;
+    view->samples = host_brew_count ? m1_result_samples : NULL;
+    for(unsigned i = 0; i < host_brew_count; ++i) {
+        m1_result_samples[i] = (result_sample_t){host_brew[i].weight_decigrams,
+                                               host_brew[i].flow_decigrams};
+        if(host_brew[i].flow_decigrams > view->peak_flow_decigrams)
+            view->peak_flow_decigrams = host_brew[i].flow_decigrams;
+    }
+    if(view->elapsed_seconds > 0 && view->total_water_decigrams > 0)
+        view->avg_flow_decigrams = view->total_water_decigrams / view->elapsed_seconds;
 }
 
 static void on_m1_brew_target(void *context)

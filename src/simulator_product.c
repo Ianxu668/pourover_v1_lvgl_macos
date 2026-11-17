@@ -164,7 +164,7 @@ static void product_handle_key(sim_key_t key, const po_ui_locale_t *locale, uint
     else if(result.data_changed) weight_changed = true;
     if(weight_changed && (product_session.page == SIM_M1_BREW ||
                           product_session.page == SIM_M2_BREW))
-        host_brew_follow();
+        host_brew_follow(key == SIM_KEY_RIGHT);
     if(weight_changed && product_session.page == SIM_M1_READY)
         ready_weight_changed(note_until);
     if(weight_changed && !refresh_session())
@@ -213,9 +213,8 @@ static void poll_product_keys(const po_ui_locale_t *locale, uint32_t *note_until
         if(now_ms - product_brew_tick >= 1000u) {
             product_brew_tick = now_ms;
             sim_session_tick_brew(&product_session);
-            /* While the script is running it writes g/s itself. A 1 s delta
-             * would replace that with the small slice added since the last step. */
-            if(!m1_brew_pour_running()) host_brew_sample();
+            /* Match the shared curve's t=0,1,2... sample contract. */
+            host_brew_sample();
             (void)refresh_session();
         }
     } else {

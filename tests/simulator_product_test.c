@@ -261,9 +261,9 @@ static void test_m2_result_flows(void)
     service();
     assert(m2_result_mirror.bypass_live_decigrams == 0);
     assert(m2_result_mirror.bypass_post_decigrams == 300);
-    assert(m2_result_mirror.total_decigrams == 2300); /* water 2000 + pre 0 + post 300 */
     fill_m2_result(&view);
-    assert(view.total_decigrams == 2300);
+    assert(view.total_decigrams == 2300); /* water 2000 + pre 0 + post 300 */
+    assert(view.total_input_decigrams == 2300);
     assert(m2_result_mirror.surface == PO_M2_RESULT_MAIN);
 
     /* Cancel clears the live reading without changing the confirmed total. */
@@ -273,7 +273,21 @@ static void test_m2_result_flows(void)
     service();
     assert(m2_result_mirror.bypass_live_decigrams == 0);
     assert(m2_result_mirror.bypass_post_decigrams == 300);
-    assert(m2_result_mirror.total_decigrams == 2300);
+    fill_m2_result(&view);
+    assert(view.total_decigrams == 2300);
+
+    /* The curve gets the same series the stats were computed from. */
+    host_brew_count = 2;
+    host_brew[0].weight_decigrams = 100;
+    host_brew[0].flow_decigrams = 15;
+    host_brew[1].weight_decigrams = 400;
+    host_brew[1].flow_decigrams = 25;
+    fill_m2_result(&view);
+    assert(view.sample_count == 2);
+    assert(view.samples == host_brew);
+    assert(view.avg_flow_centi == 566); /* 0.20 oz/s = 5.6699 g/s. */
+    assert(view.peak_flow_centi == 708);
+    assert(view.total_decigrams == 2300);
 
     /* 返回继续 goes back to the running brew, not Ready. */
     on_m2_result_event(&(po_m2_result_event_t){.action = PO_M2_RESULT_CONTINUE,
@@ -290,7 +304,94 @@ static void test_m2_result_flows(void)
     assert(!m2_result_mirror.save_open);
     assert(m2_result_mirror.surface == PO_M2_RESULT_MAIN);
     assert(m2_result_mirror.bypass_live_decigrams == 0);
+
+    /* Ready bypass is snapshotted on present. A later fill leaves pre alone. */
+    m2_ready_mirror.bypass_decigrams = 400;
+    fill_m2_result(&view);
+    assert(view.bypass_pre_decigrams == 0);
+    assert(view.total_decigrams == 2300);
+    assert(m2_result_present());
+    fill_m2_result(&view);
+    assert(view.bypass_pre_decigrams == 400);
+    assert(view.bypass_post_decigrams == 300);
+    assert(view.total_decigrams == 2700);
+    assert(view.total_input_decigrams == 2700);
     po_ui_destroy();
+}
+
+static void test_m2_new_brew_discards_post_bypass(void)
+{
+    po_m2_result_view_t view;
+    m2_reset();
+    start_mode1_ready();
+    press(SIM_SWIPE_NEXT);
+    press(SIM_KEY_LEFT);
+    press(SIM_KEY_LEFT);
+    product_session.net_decigrams = 2000;
+    on_m2_result_event(&(po_m2_result_event_t){.action = PO_M2_RESULT_BYPASS_COMMIT,
+                                              .surface = PO_M2_RESULT_BYPASS, .value = 300}, NULL);
+    service();
+    assert(m2_result_mirror.bypass_post_decigrams == 300);
+
+    press(SIM_KEY_RIGHT);
+    assert(product_session.page == SIM_M2_READY);
+    press(SIM_KEY_LEFT);
+    product_session.net_decigrams = 2000;
+    press(SIM_KEY_LEFT);
+    assert(product_session.page == SIM_M2_RESULT);
+    fill_m2_result(&view);
+    assert(view.bypass_post_decigrams == 0);
+    assert(view.total_decigrams == 2000);
+    po_ui_destroy();
+}
+
+static void test_m2_result_ounce_statistics(void)
+{
+    po_m2_result_view_t view;
+    m2_reset();
+    ready_view.unit = PO_READY_UNIT_OZ;
+    m2_result_mirror = po_ui_m2_result_baseline;
+    m2_result_mirror.target_grams = 40;
+    m2_result_mirror.dose_decigrams = 180;
+    product_session.net_decigrams = 142;
+    host_brew_count = 3;
+    host_brew[0] = (brew_sample_t){35, 15};
+    host_brew[1] = (brew_sample_t){141, 25}; /* 1.41 oz is still below 40 g. */
+    host_brew[2] = (brew_sample_t){142, 10};
+    fill_m2_result(&view);
+    assert(view.water_decigrams == 142 && view.total_input_decigrams == 142);
+    assert(view.total_ratio_tenths == 22);
+    assert(view.target_time_seconds == 2);
+    assert(view.avg_flow_centi == 472);
+    assert(view.peak_flow_centi == 708);
+}
+
+static void test_m2_result_statistics_edges(void)
+{
+    po_m2_result_view_t view;
+    m2_reset();
+    ready_view.unit = PO_READY_UNIT_GRAM;
+    m2_result_mirror = po_ui_m2_result_baseline;
+    m2_result_mirror.target_grams = 40;
+    host_brew_count = 2;
+    host_brew[0].weight_decigrams = 100;
+    host_brew[0].flow_decigrams = 15;
+    host_brew[1].weight_decigrams = 400;
+    host_brew[1].flow_decigrams = 25;
+    fill_m2_result(&view);
+    assert(view.target_time_seconds == 1);
+
+    m2_result_mirror.target_grams = 10;
+    fill_m2_result(&view);
+    assert(view.target_time_seconds == 0);
+
+    host_brew_count = 0;
+    fill_m2_result(&view);
+    assert(view.sample_count == 0);
+    assert(view.samples == NULL);
+    assert(view.avg_flow_centi == 0);
+    assert(view.peak_flow_centi == 0);
+    assert(view.target_time_seconds == -1);
 }
 
 /* M1 Result: no automatic save prompt or auto-return; host callbacks close an
@@ -335,6 +436,82 @@ static void test_m1_result_save_and_discard(void)
     assert(!m1_result_save_open);
     assert(!visible("result-save"));
     po_ui_destroy();
+}
+
+static void test_m1_script_history_follows_seconds(void)
+{
+    brew_view_t brew;
+    result_view_t result;
+    start_mode1_ready();
+    press(SIM_KEY_LEFT);
+    for(unsigned i = 0; i < 9; ++i) {
+        m1_brew_pour_step();
+        if(i && i % 4 == 0) {
+            sim_session_tick_brew(&product_session);
+            host_brew_sample();
+        }
+    }
+    fill_m1_brew(&brew);
+    assert(brew.net_decigrams == 447 && brew.flow_decigrams == 300);
+    assert(brew.progress_permille == 89); /* Added water is 44.7 - 18.0 g. */
+    assert(brew.sample_count == brew.elapsed_seconds + 1);
+    assert(brew.samples[0].weight_decigrams == 180);
+    assert(brew.samples[1].weight_decigrams == 260);
+    assert(brew.samples[brew.sample_count - 1].weight_decigrams == 447);
+    fill_m1_result(&result);
+    assert(result.sample_count == brew.sample_count && result.samples);
+    assert(result.samples[result.sample_count - 1].weight_decigrams == 447);
+    assert(result.peak_flow_decigrams == 300);
+    assert(result.total_water_decigrams == 267);
+    assert(result.avg_flow_decigrams == 133);
+    product_session.net_decigrams = 170;
+    fill_m1_result(&result);
+    assert(result.total_water_decigrams == 0 && result.avg_flow_decigrams == 0);
+    po_ui_destroy();
+}
+
+static void test_m1_tare_resets_pour_origin(void)
+{
+    result_view_t view;
+    start_mode1_ready();
+    press(SIM_KEY_LEFT);
+    press(SIM_KEY_RIGHT);
+    m1_brew_pour_cancel();
+    sim_session_add_weight(&product_session, 100);
+    sim_session_tick_brew(&product_session);
+    host_brew_sample();
+    fill_m1_result(&view);
+    assert(view.total_water_decigrams == 100 && view.avg_flow_decigrams == 100);
+    assert(view.samples[0].weight_decigrams == 0);
+    po_ui_destroy();
+}
+
+static void test_m1_brew_progress_tracks_target(void)
+{
+    brew_view_t view;
+    product_session.net_decigrams = 0;
+    host_brew_begin();
+    ready_view.unit = PO_READY_UNIT_GRAM;
+    ready_view.show_target = true;
+    ready_view.target_grams = 300;
+    product_session.net_decigrams = 1272;
+    fill_m1_brew(&view);
+    assert(view.progress_permille == 424);
+    product_session.net_decigrams = 4180;
+    fill_m1_brew(&view);
+    assert(view.progress_permille == 1000);
+    product_session.net_decigrams = -10;
+    fill_m1_brew(&view);
+    assert(view.progress_permille == 0);
+    ready_view.unit = PO_READY_UNIT_OZ;
+    product_session.net_decigrams = 1059;
+    fill_m1_brew(&view);
+    assert(view.progress_permille == 1000);
+    ready_view.show_target = false;
+    product_session.net_decigrams = 1272;
+    fill_m1_brew(&view);
+    assert(view.progress_permille == 0);
+    ready_view.unit = PO_READY_UNIT_GRAM;
 }
 
 /* Retired M1 target-sheet requests never reopen a touch surface. */
@@ -438,7 +615,7 @@ static void test_settings_back_parent_and_return(void)
 static void test_cli_product_previews(void)
 {
     static const struct { const char *screen; const char *root; } cases[] = {
-        {"ready", "ready-surface"}, {"settings", "settings-root"},
+        {"ready", "ready-card"}, {"settings", "settings-root"},
         {"m2-ready", "m2-ready-root"}, {"m2-brew", "m2-brew-root"},
         {"m2-result", "m2-result-root"}, {"result", "result-root"},
         {"container", "container-root"}, {"brew-settings", "brew-settings-root"}
@@ -547,7 +724,7 @@ static void test_cli_settings_shares_session_host(void)
     service();
     assert(settings_mirror.screen == PO_SET_HOME);
     press(SIM_SWIPE_NEXT);
-    assert(product_session.page == SIM_M1_READY && named("ready-surface"));
+    assert(product_session.page == SIM_M1_READY && named("ready-card"));
     press(SIM_SWIPE_NEXT);
     press(SIM_SWIPE_NEXT);
     assert(product_session.page == SIM_SETTINGS && settings_mirror.volume_percent == 61);
@@ -687,7 +864,13 @@ int main(void)
     test_m2_ready_state_survives_refresh();
     test_m2_brew_state();
     test_m2_result_flows();
+    test_m2_new_brew_discards_post_bypass();
+    test_m2_result_ounce_statistics();
+    test_m2_result_statistics_edges();
     test_m1_result_save_and_discard();
+    test_m1_brew_progress_tracks_target();
+    test_m1_script_history_follows_seconds();
+    test_m1_tare_resets_pour_origin();
     test_m1_brew_target_sheet_survives();
     test_m1_brew_curve_break_follows_weight();
     test_settings_back_parent_and_return();

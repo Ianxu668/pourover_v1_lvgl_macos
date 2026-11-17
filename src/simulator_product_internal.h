@@ -34,7 +34,7 @@ extern brew_sample_t host_brew[HOST_BREW_CAP];
 extern unsigned host_brew_count;
 void host_brew_begin(void);
 void host_brew_sample(void);
-void host_brew_follow(void);
+void host_brew_follow(bool tared);
 /* Mode-1 brew replays one canned pour. The ready curve switch still picks the graphic. */
 void m1_brew_pour_arm(void);
 void m1_brew_pour_cancel(void);

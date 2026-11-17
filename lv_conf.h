@@ -283,7 +283,7 @@
 #define LV_DRAW_SW_COMPLEX 1
 
 /** Each additional stop costs (sizeof(lv_color_t) + 1) bytes. */
-#define LV_GRADIENT_MAX_STOPS 2
+#define LV_GRADIENT_MAX_STOPS 4
 
 /** Adds linear gradients at an angle, plus radial and conical gradients. */
 #define LV_USE_DRAW_SW_COMPLEX_GRADIENTS 1
