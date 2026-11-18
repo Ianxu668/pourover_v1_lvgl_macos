@@ -8,14 +8,15 @@ sim_session_t product_session;
 static uint8_t product_was[SDL_NUM_SCANCODES];
 static uint32_t product_brew_tick;
 static bool product_started;
+static brew_settings_view_t brew_settings_view;
 
 static bool refresh_session(void);
 static bool present_session(const po_ui_locale_t *locale, uint32_t *note_until);
 static void product_handle_key(sim_key_t key, const po_ui_locale_t *locale, uint32_t *note_until);
 
-/* Page-local state lives in host mirrors; dynamic session data is filled per call.
- * Callbacks only mutate the mirrors and set pending flags; the host loop services
- * them outside LVGL event context. */
+/* Business state lives in host mirrors; dynamic session data is filled per call.
+ * Callbacks update mirrors and pending flags; the host loop services them
+ * outside LVGL event context. */
 
 bool product_view_dirty;
 static bool product_inject_valid;
@@ -67,6 +68,13 @@ static void on_preview_back(void *context)
     product_pending_page_valid = true;
 }
 
+static void on_brew_settings_changed(const brew_settings_view_t *request, void *context)
+{
+    (void)context;
+    brew_settings_view = *request;
+    product_view_dirty = true;
+}
+
 static bool present_session(const po_ui_locale_t *locale, uint32_t *note_until)
 {
     switch(product_session.page) {
@@ -82,8 +90,11 @@ static bool present_session(const po_ui_locale_t *locale, uint32_t *note_until)
         po_ui_container_set_handlers(on_preview_back, NULL, NULL, NULL, NULL, NULL);
         return true;
     case SIM_BREW_SETTINGS:
-        if(!po_ui_show_brew_settings(NULL)) return false;
-        po_ui_brew_settings_set_handlers(on_preview_back, NULL, NULL);
+        brew_settings_view = (brew_settings_view_t){
+            .mode = 1, .duration_seconds = 60, .curve_enabled = true
+        };
+        if(!po_ui_show_brew_settings(&brew_settings_view)) return false;
+        po_ui_brew_settings_set_handlers(on_preview_back, on_brew_settings_changed, NULL);
         return true;
     case SIM_PAGE_NONE:
         return false;
@@ -119,9 +130,9 @@ static bool refresh_session(void)
     case SIM_M2_READY: return m2_ready_refresh();
     case SIM_M2_BREW: return m2_brew_refresh();
     case SIM_M2_RESULT: return m2_result_refresh();
+    case SIM_BREW_SETTINGS: return po_ui_brew_settings_set(&brew_settings_view);
     case SIM_SETTINGS:
     case SIM_CONTAINER:
-    case SIM_BREW_SETTINGS:
         return true;
     case SIM_PAGE_NONE:
         return false;

@@ -116,14 +116,19 @@ static void on_settings_event(const po_settings_event_t *event, void *context)
     case PO_SET_ACT_DOSE_DETECT: settings_mirror.dose_detect = event->value != 0; break;
     case PO_SET_ACT_FILTER: settings_mirror.filter_detect = event->value != 0; break;
     case PO_SET_ACT_M2_TARE: settings_mirror.m2_auto_tare = event->value != 0; break;
+    case PO_SET_ACT_CONTAINER_CLEAR:
+        if(event->value != settings_mirror.container_slot ||
+           (settings_mirror.container_phase != PO_SET_CONT_WAIT &&
+            settings_mirror.container_phase != PO_SET_CONT_READY))
+            return;
+        settings_mirror.live_decigrams = 0;
+        break;
     case PO_SET_ACT_HISTORY_OPEN:
-        if(event->value >= 0 && (unsigned)event->value < settings_mirror.history_count) {
-            settings_mirror.history_index = event->value;
-            settings_view_dirty = true;
-        }
+        if(event->value < 0 || (unsigned)event->value >= settings_mirror.history_count) return;
+        settings_mirror.history_index = event->value;
         break;
     case PO_SET_ACT_HISTORY_DELETE_ASK:
-        if(event->value < 0 || (unsigned)event->value >= settings_mirror.history_count) break;
+        if(event->value < 0 || (unsigned)event->value >= settings_mirror.history_count) return;
         settings_mirror.history_index = event->value;
         settings_pending_screen = PO_SET_HISTORY_DELETE;
         settings_screen_pending = true;
@@ -149,19 +154,18 @@ static void on_settings_event(const po_settings_event_t *event, void *context)
         settings_toast_until = SDL_GetTicks() + 2000;
         settings_pending_screen = PO_SET_HISTORY;
         settings_screen_pending = true;
-        settings_view_dirty = true;
         break;
     case PO_SET_ACT_HISTORY_CLEAR_OK:
         settings_mirror.history_count = 0;
         settings_mirror.history_index = 0;
         settings_pending_screen = PO_SET_HISTORY;
         settings_screen_pending = true;
-        settings_view_dirty = true;
         break;
     default:
-        /* Container, calibration and reset have no simulator backend. */
-        break;
+        /* Remaining device actions have no simulator backend. */
+        return;
     }
+    settings_view_dirty = true;
 }
 
 bool settings_service(void)
