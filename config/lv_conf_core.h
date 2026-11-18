@@ -31,7 +31,9 @@
 #define LV_USE_SVG 0
 #define LV_USE_GIF 0
 #define LV_USE_FFMPEG 0
+#ifndef LV_USE_FREETYPE
 #define LV_USE_FREETYPE 0
+#endif
 #define LV_USE_TINY_TTF 0
 #define LV_USE_TRANSLATION 1
 #define LV_FONT_SOURCE_HAN_SANS_SC_16_CJK 0
