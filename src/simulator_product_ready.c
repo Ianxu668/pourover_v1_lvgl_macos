@@ -1,6 +1,7 @@
 #include <string.h>
 #include <SDL.h>
 #include "simulator_product_internal.h"
+#include "simulator_fonts.h"
 
 po_ready_view_t ready_view;
 bool ready_curve = true;
@@ -60,7 +61,7 @@ static void ready_tared(void *context)
 bool ready_present(const po_ui_locale_t *locale, uint32_t *note_until)
 {
     ready_view.net_decigrams = product_session.net_decigrams;
-    if(!po_ui_show_ready(&ready_view, locale)) return false;
+    if(!simulator_show_ready(&ready_view, locale)) return false;
     po_ui_ready_set_handlers(ready_params_changed, ready_tared, note_until);
     ready_restore_params();
     return po_ui_ready_set_records(ready_records, sizeof ready_records / sizeof ready_records[0]);

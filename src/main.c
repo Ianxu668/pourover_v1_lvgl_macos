@@ -8,6 +8,7 @@
 #include "hal/frame_stats.h"
 #include "pourover_ui.h"
 #include "simulator_capture.h"
+#include "simulator_fonts.h"
 #include "simulator_options.h"
 #include "simulator_preferences.h"
 #include "simulator_start.h"
@@ -89,7 +90,7 @@ static bool startup_dispatch(bool *language_pending, bool *showing_language,
     if(*language_pending && po_ui_boot_is_finished()) {
         *language_pending = false;
         *showing_language = true;
-        if(!po_ui_show_language(initial, save_language, preferences_path)) {
+        if(!simulator_show_language(initial, save_language, preferences_path)) {
             fprintf(stderr, "Could not create the language page.\n");
             return false;
         }
@@ -98,7 +99,7 @@ static bool startup_dispatch(bool *language_pending, bool *showing_language,
         const po_ui_locale_t *selected_language = po_ui_get_language();
         *showing_language = false;
         *showing_ready = true;
-        if(!po_ui_show_ready(simulator_product_ready_view(), selected_language)) {
+        if(!simulator_show_ready(simulator_product_ready_view(), selected_language)) {
             fprintf(stderr, "Could not create mode 1 ready.\n");
             return false;
         }
@@ -149,7 +150,7 @@ int main(int argc, char **argv)
     bool showing_ready = options.page != SIM_PAGE_NONE;
     bool language_pending = startup_language_pending(&options, saved_language_valid);
     if(showing_language) {
-        if(!po_ui_show_language(initial_language, save_language, preferences_path)) {
+        if(!simulator_show_language(initial_language, save_language, preferences_path)) {
             fprintf(stderr, "Could not create the language page.\n");
             free(preferences_path);
             return EXIT_FAILURE;
@@ -194,20 +195,20 @@ int main(int argc, char **argv)
                 if(candidate != NULL) po_resource_pack_destroy(candidate);
                 *simulator_product_ready_view() = fallback_view;
                 fprintf(stderr, "Falling back to built-in Ready preview.\n");
-                if(!po_ui_show_ready(simulator_product_ready_view(), initial_language)) {
+                if(!simulator_show_ready(simulator_product_ready_view(), initial_language)) {
                     fprintf(stderr, "Could not create built-in mode 1 ready after resource preview fallback.\n");
                     free(preferences_path);
                     return EXIT_FAILURE;
                 }
             }
         }
-        else if(!po_ui_show_ready(simulator_product_ready_view(), initial_language)) {
+        else if(!simulator_show_ready(simulator_product_ready_view(), initial_language)) {
             fprintf(stderr, "Could not create mode 1 ready.\n");
             free(preferences_path);
             return EXIT_FAILURE;
         }
 #else
-        if(!po_ui_show_ready(simulator_product_ready_view(), initial_language)) {
+        if(!simulator_show_ready(simulator_product_ready_view(), initial_language)) {
             fprintf(stderr, "Could not create mode 1 ready.\n");
             free(preferences_path);
             return EXIT_FAILURE;
@@ -261,6 +262,10 @@ int main(int argc, char **argv)
             lv_refr_now(display);
             bool captured = simulator_capture(options.screenshot_path);
             po_ui_destroy();
+#ifdef SIMULATOR_SHARED_FREETYPE
+            lv_draw_wait_for_finish();
+#endif
+            simulator_fonts_close();
 #ifdef PO_UI_RESOURCE_PROTOTYPE
             if(ready_resource_pack != NULL) po_resource_pack_destroy(ready_resource_pack);
 #endif

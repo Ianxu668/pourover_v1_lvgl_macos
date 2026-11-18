@@ -31,6 +31,13 @@ To build against a different LVGL Pro project, set `LVGL_PRO_PROJECT_DIR`; it is
 cmake -S . -B build -DLVGL_PRO_PROJECT_DIR=/path/to/ui-project
 ```
 
+To preview the same FreeType fonts as the BK7258 firmware, configure the SDL
+simulator with `cmake -S . -B build-freetype -DLV_USE_FREETYPE=ON` and
+`cmake --build build-freetype`. This builds FreeType from the UI submodule's
+pinned archive and validates the checked-in fonts before building the preview.
+Language selection and Mode 1 Ready use those fonts with existing `--screen` and
+`--language` options. See [shared FreeType inputs](ui/docs/FREETYPE.md).
+
 `simulator_preferences` currently stores only the selected language, not window size or position. The simulator reads and saves the selected locale as `language` under SDL's `Mistro/PourOverScale` preference directory. A valid saved locale is loaded before the UI starts and is the language page's initial selection. An interactive launch always plays the boot logo, then opens language selection. With no valid preference the selection starts in English. Confirming the page saves the locale and advances to mode 1 ready. `--screenshot` without `--screen` still captures the boot hold when a valid locale is already saved, and captures the language page when it is not.
 
 Useful preview and capture commands:

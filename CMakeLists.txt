@@ -72,7 +72,14 @@ option(LV_USE_DRAW_SDL "Use SDL draw unit" OFF)
 option(LV_USE_LIBPNG "Use libpng to decode PNG" OFF)
 option(LV_USE_LIBJPEG_TURBO "Use libjpeg turbo to decode JPEG" OFF)
 option(LV_USE_FFMPEG "Use libffmpeg to display video using lv_ffmpeg" OFF)
-option(LV_USE_FREETYPE "Use freetype library" OFF)
+option(LV_USE_FREETYPE "Preview with the UI submodule's pinned FreeType fonts" OFF)
+if(LV_USE_FREETYPE)
+    if(USE_FREERTOS)
+        message(FATAL_ERROR "The shared FreeType preview requires the SDL simulator")
+    endif()
+    # The simulator links the pinned UI archive instead of LVGL's dependency resolver.
+    set(CONFIG_LV_USE_FREETYPE OFF)
+endif()
 
 # Set C and C++ standards
 set(CMAKE_C_STANDARD 99)
@@ -146,13 +153,6 @@ if(LV_USE_FFMPEG)
     list(APPEND MAIN_LIBS avformat avcodec avutil swscale z)
 endif()
 
-# Conditionally include and link FreeType if LV_USE_FREETYPE is enabled
-if(LV_USE_FREETYPE)
-    find_package(Freetype REQUIRED)
-    target_include_directories(lvgl PUBLIC ${FREETYPE_INCLUDE_DIRS})
-    list(APPEND MAIN_LIBS ${FREETYPE_LIBRARIES})
-endif()
-
 include(CTest)
 
 set(PRODUCT_UI_SOURCE_DIR "${PROJECT_SOURCE_DIR}/ui")
@@ -192,6 +192,9 @@ target_include_directories(main PRIVATE
   "${PRODUCT_UI_SOURCE_DIR}/include"
 )
 target_link_libraries(main ${MAIN_LIBS})
+if(LV_USE_FREETYPE)
+  include(cmake/simulator_freetype.cmake)
+endif()
 if(TARGET lib-ui-resource-stdio)
   target_link_libraries(main lib-ui-resource-stdio)
 endif()
