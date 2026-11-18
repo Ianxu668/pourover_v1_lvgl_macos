@@ -646,12 +646,24 @@ static void test_cli_m2_selection_survives_refresh(void)
     assert(m2_ready_mirror.surface == PO_M2_READY_PICK);
     assert(m2_ready_mirror.pick_tab == PO_M2_PICK_HISTORY);
     assert(m2_ready_mirror.editor == PO_M2_EDITOR_KEYPAD);
+    on_m2_ready_event(&(po_m2_ready_event_t){.action = PO_M2_READY_SOURCE,
+                        .value = PO_M2_SOURCE_RECIPE, .surface = PO_M2_READY_PICK}, NULL);
+    po_m2_result_view_t result;
+    fill_m2_result(&result);
+    assert(result.source == PO_M2_SOURCE_RECIPE);
+    assert(result.target_grams == m2_ready_mirror.target_grams);
+    assert(result.segment_count == 0);
     assert(named("m2-ready-cup-use"));
     click("m2-ready-cup-use");
     service();
     assert(m2_ready_mirror.source == PO_M2_SOURCE_HISTORY);
     assert(m2_ready_mirror.dose_decigrams == m2_cups[0].dose_decigrams);
     assert(m2_ready_mirror.target_grams == m2_cups[0].weight_decigrams / 10);
+    po_m2_brew_view_t brew;
+    fill_m2_brew(&brew);
+    assert(brew.source == PO_M2_SOURCE_HISTORY);
+    assert(brew.segment_count == 4);
+    assert(brew.segments[0].target_grams == 60);
 
     m2_ready_mirror.surface = PO_M2_READY_PICK;
     assert(po_ui_m2_ready_set(&m2_ready_mirror));
@@ -672,6 +684,21 @@ static void test_cli_m2_selection_survives_refresh(void)
     po_m2_ready_view_t view;
     fill_m2_ready(&view);
     assert(strcmp(view.recipe_name, m2_recipes[0].name) == 0);
+    press(SIM_KEY_LEFT);
+    assert(product_session.page == SIM_M2_BREW);
+    lv_obj_t *reference = named("m2-brew-ref-line");
+    assert(reference && lv_line_get_point_count(reference) > 2);
+    press(SIM_KEY_LEFT);
+    assert(product_session.page == SIM_M2_RESULT);
+    fill_m2_result(&result);
+    assert(result.source == PO_M2_SOURCE_RECIPE);
+    assert(result.segment_count == (unsigned)m2_recipes[0].segments);
+    on_m2_ready_event(&(po_m2_ready_event_t){.action = PO_M2_READY_SOURCE,
+                        .value = PO_M2_SOURCE_RECIPE, .surface = PO_M2_READY_PICK}, NULL);
+    fill_m2_result(&result);
+    assert(result.source == PO_M2_SOURCE_RECIPE);
+    assert(result.segment_count == 0);
+    assert(result.recipe_name[0] == '\0');
     po_ui_destroy();
 
     char *wheel[] = {"simulator", "--screen", "m2-ready", "--m2-surface", "dose",

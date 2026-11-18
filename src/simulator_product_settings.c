@@ -11,6 +11,12 @@ static uint32_t settings_toast_until;
 static bool settings_screen_pending;
 static int settings_pending_screen;
 
+static const brew_sample_t history_preview[][9] = {
+    {{0, 0}, {430, 0}, {550, 0}, {1220, 0}, {1320, 0}, {1830, 0}, {1940, 0}, {2290, 0}, {2486, 0}},
+    {{0, 0}, {520, 0}, {670, 0}, {1110, 0}, {1440, 0}, {1680, 0}, {1960, 0}, {2380, 0}, {2554, 0}},
+    {{0, 0}, {470, 0}, {510, 0}, {1060, 0}, {1180, 0}, {1700, 0}, {1760, 0}, {2230, 0}, {2400, 0}},
+};
+
 static void settings_mirror_initialize(const po_ui_locale_t *locale)
 {
     settings_mirror = po_ui_settings_baseline;
@@ -43,6 +49,10 @@ static void settings_mirror_initialize(const po_ui_locale_t *locale)
         .water_decigrams = 2350, .dose_decigrams = 130, .avg_flow_decigrams = 12,
         .target_grams = 250
     };
+    for(unsigned i = 0; i < sizeof history_preview / sizeof history_preview[0]; ++i) {
+        settings_mirror.history[i].sample_count = sizeof history_preview[i] / sizeof history_preview[i][0];
+        settings_mirror.history[i].samples = history_preview[i];
+    }
     settings_mirror.history_count = 5;
     settings_mirror.history_index = 0;
     settings_mirror.container_weight_decigrams[0] = 1824;

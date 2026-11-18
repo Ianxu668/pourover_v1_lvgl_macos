@@ -12,6 +12,8 @@ static po_m2_brew_view_t m2_brew_mirror;
 static bool m2_brew_mirror_valid;
 static po_m2_result_view_t m2_result_mirror;
 static bool m2_result_mirror_valid;
+static po_m2_segment_t m2_plan[PO_M2_SEGMENT_MAX];
+static unsigned m2_plan_count;
 
 /* Simulator demo catalog: the pick page and history sheet frames are drawn
  * with these three recipes and cups. Segment plans mirror the design frames
@@ -37,6 +39,16 @@ static const po_m2_cup_t m2_cups[] = {
      .weight_decigrams = 2400, .dose_decigrams = 150},
 };
 
+/* Reference profiles for the simulator's three demo cups. */
+static const po_m2_segment_t m2_cup_plans[][4] = {
+    {{.target_grams = 60, .seconds = 45}, {.target_grams = 68, .seconds = 45},
+     {.target_grams = 72, .seconds = 45}, {.target_grams = 88, .seconds = 50}},
+    {{.target_grams = 65, .seconds = 50}, {.target_grams = 70, .seconds = 45},
+     {.target_grams = 73, .seconds = 45}, {.target_grams = 78, .seconds = 52}},
+    {{.target_grams = 48, .seconds = 43}, {.target_grams = 60, .seconds = 44},
+     {.target_grams = 62, .seconds = 45}, {.target_grams = 70, .seconds = 53}},
+};
+
 static void fill_m2_ready(po_m2_ready_view_t *view)
 {
     *view = m2_ready_mirror;
@@ -54,6 +66,13 @@ static void fill_m2_ready(po_m2_ready_view_t *view)
 static void fill_m2_brew(po_m2_brew_view_t *view)
 {
     *view = m2_brew_mirror;
+    if(m2_ready_mirror_valid) {
+        view->source = m2_ready_mirror.source;
+        if(view->source != PO_M2_SOURCE_FREE)
+            view->target_grams = m2_ready_mirror.target_grams;
+        view->segment_count = m2_plan_count;
+        memcpy(view->segments, m2_plan, m2_plan_count * sizeof m2_plan[0]);
+    }
     view->battery_percent = ready_view.battery_percent;
     view->charging = ready_view.charging;
     view->connected = ready_view.connected;
@@ -79,6 +98,14 @@ static int64_t m2_centi_grams(int64_t value, bool ounces)
 static void fill_m2_result(po_m2_result_view_t *view)
 {
     *view = m2_result_mirror;
+    if(m2_ready_mirror_valid) {
+        view->source = m2_ready_mirror.source;
+        if(view->source != PO_M2_SOURCE_FREE)
+            view->target_grams = m2_ready_mirror.target_grams;
+        view->segment_count = m2_plan_count;
+        memcpy(view->segments, m2_plan, m2_plan_count * sizeof m2_plan[0]);
+        memcpy(view->recipe_name, m2_ready_mirror.recipe_name, sizeof view->recipe_name);
+    }
     view->elapsed_seconds = (int)product_session.elapsed_seconds;
     view->water_decigrams = product_session.net_decigrams;
     view->ounces = ready_view.unit == PO_READY_UNIT_OZ;
@@ -142,6 +169,12 @@ static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
         break;
     case PO_M2_READY_SOURCE:
         m2_ready_mirror.source = (po_m2_source_t)event->value;
+        m2_ready_mirror.recipe_name[0] = '\0';
+        m2_ready_mirror.recipe_segments = 0;
+        m2_ready_mirror.preview_seconds = 0;
+        m2_ready_mirror.target_grams = po_ui_m2_ready_baseline.target_grams;
+        m2_plan_count = 0;
+        product_view_dirty = true;
         break;
     case PO_M2_READY_RECIPE:
         if(event->value < 0 || (unsigned)event->value >= sizeof m2_recipes / sizeof m2_recipes[0])
@@ -155,6 +188,8 @@ static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
             m2_ready_mirror.recipe_segments = recipe->segments;
             m2_ready_mirror.preview_seconds = recipe->seconds;
             m2_ready_mirror.target_grams = recipe->total_grams;
+            m2_plan_count = (unsigned)recipe->segments;
+            memcpy(m2_plan, recipe->plan, m2_plan_count * sizeof m2_plan[0]);
             product_view_dirty = true;
         }
         break;
@@ -163,6 +198,8 @@ static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
             break;
         {
             const po_m2_cup_t *cup = &m2_cups[event->value];
+            m2_plan_count = sizeof m2_cup_plans[0] / sizeof m2_cup_plans[0][0];
+            memcpy(m2_plan, m2_cup_plans[event->value], sizeof m2_cup_plans[0]);
             m2_ready_mirror.surface = PO_M2_READY_MAIN;
             m2_ready_mirror.source = PO_M2_SOURCE_HISTORY;
             m2_ready_mirror.recipe_name[0] = '\0';
@@ -362,6 +399,7 @@ void m2_reset(void)
     m2_autostart = true;
     m2_show_remain = false;
     m2_tare_step = 0;
+    m2_plan_count = 0;
     memset(&m2_ready_mirror, 0, sizeof m2_ready_mirror);
     m2_ready_mirror_valid = false;
     memset(&m2_brew_mirror, 0, sizeof m2_brew_mirror);
