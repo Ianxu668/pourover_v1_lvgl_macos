@@ -67,6 +67,7 @@ static bool has_visible_label(lv_obj_t *object, const char *text)
 static bool visible(const char *name)
 {
     lv_obj_t *object = named(name);
+    if(!object) return false;
     while(object != NULL) {
         if(lv_obj_is_hidden(object)) return false;
         object = lv_obj_get_parent(object);
@@ -180,6 +181,7 @@ static void test_m2_brew_state(void)
                                           .surface = PO_M2_BREW_CURVE, .value = 0}, NULL);
     sim_session_tick_brew(&product_session);
     assert(refresh_session()); /* the per-second brew tick */
+    assert(visible("m2-brew-curve"));
     assert(!visible("m2-brew-curve-back"));
 
     on_m2_brew_event(&(po_m2_brew_event_t){.action = PO_M2_BREW_ACT_DOSE,

@@ -45,15 +45,15 @@ static char *get_preferences_file_path(void)
     return path;
 }
 
-static bool save_language(const po_ui_locale_t *locale, void *context)
+static po_ui_save_result_t save_language(const po_ui_locale_t *locale, void *context)
 {
     const char *path = context;
     if(!simulator_preferences_write(path, locale)) {
         fprintf(stderr, "Could not save language preference%s%s.\n",
                 locale == NULL ? "" : " for ", locale == NULL ? "" : locale->tag);
-        return false;
+        return PO_UI_SAVE_FAILED;
     }
-    return true;
+    return PO_UI_SAVE_OK;
 }
 
 static const po_ui_locale_t *select_initial_language(const simulator_options_t *options,
