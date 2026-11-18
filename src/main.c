@@ -46,8 +46,10 @@ static char *get_preferences_file_path(void)
     return path;
 }
 
-static po_ui_save_result_t save_language(const po_ui_locale_t *locale, void *context)
+static po_ui_save_result_t save_language(const po_ui_locale_t *locale,
+                                         po_ui_save_request_id_t request_id, void *context)
 {
+    (void)request_id;
     const char *path = context;
     if(!simulator_preferences_write(path, locale)) {
         fprintf(stderr, "Could not save language preference%s%s.\n",
