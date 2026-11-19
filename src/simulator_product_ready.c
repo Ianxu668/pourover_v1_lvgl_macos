@@ -5,6 +5,7 @@
 
 po_ready_view_t ready_view;
 bool ready_curve = true;
+static bool ready_params_dirty;
 
 static int clamp_ready(int value, int low, int high)
 {
@@ -27,17 +28,7 @@ static const po_ready_record_t ready_records[] = {
     {11, 2, 1, 180, 3000, 1}
 };
 
-static void ready_params_changed(const po_ready_params_t *params, void *context)
-{
-    (void)context;
-    ready_view.show_preset = params->timer_mode == PO_READY_TIMER_DOWN;
-    ready_view.preset_seconds = params->duration_seconds;
-    ready_view.show_target = params->target_enabled;
-    if(params->target_grams > 0) ready_view.target_grams = params->target_grams;
-    ready_curve = params->curve_enabled;
-}
-
-static void ready_restore_params(void)
+static bool ready_restore_params(void)
 {
     const po_ready_params_t params = {
         .timer_mode = ready_view.show_preset ? PO_READY_TIMER_DOWN : PO_READY_TIMER_UP,
@@ -46,16 +37,30 @@ static void ready_restore_params(void)
         .target_grams = ready_view.target_grams,
         .curve_enabled = ready_curve
     };
-    (void)po_ui_ready_set_params(&params);
+    if(!po_ui_ready_set_params(&params)) return false;
+    ready_params_dirty = false;
+    return true;
+}
+
+static void ready_params_changed(const po_ready_params_t *params, void *context)
+{
+    (void)context;
+    ready_view.show_preset = params->timer_mode == PO_READY_TIMER_DOWN;
+    ready_view.preset_seconds = params->duration_seconds;
+    ready_view.show_target = params->target_enabled;
+    if(params->target_grams > 0) ready_view.target_grams = params->target_grams;
+    ready_curve = params->curve_enabled;
+    ready_params_dirty = product_view_dirty = true;
 }
 
 static void ready_tared(void *context)
 {
     uint32_t *note_until = context;
     ready_view.net_decigrams = 0;
+    product_session.net_decigrams = 0;
     ready_view.container = PO_READY_CONTAINER_NONE;
     ready_note(PO_READY_NOTE_TARED, note_until);
-    po_ui_ready_set(&ready_view);
+    product_view_dirty = true;
 }
 
 bool ready_present(const po_ui_locale_t *locale, uint32_t *note_until)
@@ -63,21 +68,23 @@ bool ready_present(const po_ui_locale_t *locale, uint32_t *note_until)
     ready_view.net_decigrams = product_session.net_decigrams;
     if(!simulator_show_ready(&ready_view, locale)) return false;
     po_ui_ready_set_handlers(ready_params_changed, ready_tared, note_until);
-    ready_restore_params();
-    return po_ui_ready_set_records(ready_records, sizeof ready_records / sizeof ready_records[0]);
+    return ready_restore_params() &&
+           po_ui_ready_set_records(ready_records, sizeof ready_records / sizeof ready_records[0]);
 }
 
 bool ready_start(uint32_t *note_until)
 {
     po_ui_ready_set_handlers(ready_params_changed, ready_tared, note_until);
-    ready_restore_params();
-    return po_ui_ready_set_records(ready_records, sizeof ready_records / sizeof ready_records[0]);
+    return ready_restore_params() &&
+           po_ui_ready_set_records(ready_records, sizeof ready_records / sizeof ready_records[0]);
 }
 
 bool ready_refresh(void)
 {
     ready_view.net_decigrams = product_session.net_decigrams;
-    return po_ui_ready_set(&ready_view);
+    bool ok = po_ui_ready_set(&ready_view) && (!ready_params_dirty || ready_restore_params());
+    if(!ok && ready_params_dirty) product_view_dirty = true;
+    return ok;
 }
 
 void ready_weight_changed(uint32_t *note_until)
@@ -89,6 +96,7 @@ void ready_reset(void)
 {
     ready_view = po_ui_ready_baseline;
     ready_curve = true;
+    ready_params_dirty = false;
 }
 
 static bool ready_edge(const uint8_t *now, const uint8_t *was, int count, SDL_Scancode code)

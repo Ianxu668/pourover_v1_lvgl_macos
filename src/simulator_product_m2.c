@@ -8,6 +8,7 @@ static int m2_tare_step;
 
 static po_m2_ready_view_t m2_ready_mirror;
 static bool m2_ready_mirror_valid;
+static bool m2_reload_recipes;
 static po_m2_brew_view_t m2_brew_mirror;
 static bool m2_brew_mirror_valid;
 static po_m2_result_view_t m2_result_mirror;
@@ -152,20 +153,25 @@ static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
     switch(event->action) {
     case PO_M2_READY_AUTOSTART:
         m2_autostart = event->value != 0;
+        product_view_dirty = true;
         break;
     case PO_M2_READY_REMAIN:
         m2_show_remain = event->value != 0;
+        product_view_dirty = true;
         break;
     case PO_M2_READY_ACT_DOSE:
         m2_ready_mirror.dose_decigrams = event->value;
         m2_ready_mirror.dose_origin = PO_M2_DOSE_MANUAL;
         m2_ready_mirror.detect_popup = false;
+        product_view_dirty = true;
         break;
     case PO_M2_READY_ACT_RATIO:
         m2_ready_mirror.ratio_tenths = event->value;
+        product_view_dirty = true;
         break;
     case PO_M2_READY_ACT_BYPASS:
         m2_ready_mirror.bypass_decigrams = event->value;
+        product_view_dirty = true;
         break;
     case PO_M2_READY_SOURCE:
         m2_ready_mirror.source = (po_m2_source_t)event->value;
@@ -174,6 +180,10 @@ static void on_m2_ready_event(const po_m2_ready_event_t *event, void *context)
         m2_ready_mirror.preview_seconds = 0;
         m2_ready_mirror.target_grams = po_ui_m2_ready_baseline.target_grams;
         m2_plan_count = 0;
+        product_view_dirty = true;
+        break;
+    case PO_M2_READY_RECIPE_RETRY:
+        m2_reload_recipes = true;
         product_view_dirty = true;
         break;
     case PO_M2_READY_RECIPE:
@@ -248,6 +258,7 @@ static void on_m2_brew_event(const po_m2_brew_event_t *event, void *context)
     switch(event->action) {
     case PO_M2_BREW_ACT_DOSE:
         m2_brew_mirror.dose_decigrams = event->value;
+        product_view_dirty = true;
         break;
     case PO_M2_BREW_CONTINUE:
         m2_brew_mirror.surface = PO_M2_BREW_MAIN;
@@ -296,6 +307,7 @@ static void on_m2_result_event(const po_m2_result_event_t *event, void *context)
         break;
     case PO_M2_RESULT_BYPASS_CANCEL:
         m2_result_mirror.bypass_live_decigrams = 0;
+        product_view_dirty = true;
         break;
     default:
         break;
@@ -315,6 +327,7 @@ bool m2_ready_present(void)
     if(!po_ui_show_m2_ready(&view)) return false;
     if(!po_ui_m2_ready_set_recipes(m2_recipes, sizeof m2_recipes / sizeof m2_recipes[0]))
         return false;
+    m2_reload_recipes = false;
     if(!po_ui_m2_ready_set_cups(m2_cups, sizeof m2_cups / sizeof m2_cups[0])) return false;
     po_ui_m2_ready_set_handlers(on_m2_ready_event, NULL);
     return true;
@@ -323,6 +336,13 @@ bool m2_ready_present(void)
 bool m2_ready_refresh(void)
 {
     po_m2_ready_view_t view;
+    if(m2_reload_recipes) {
+        if(!po_ui_m2_ready_set_recipes(m2_recipes, sizeof m2_recipes / sizeof m2_recipes[0])) {
+            product_view_dirty = true;
+            return false;
+        }
+        m2_reload_recipes = false;
+    }
     fill_m2_ready(&view);
     if(m2_ready_editor_open(&view)) return true;
     return po_ui_m2_ready_set(&view);
@@ -400,6 +420,7 @@ void m2_reset(void)
     m2_show_remain = false;
     m2_tare_step = 0;
     m2_plan_count = 0;
+    m2_reload_recipes = false;
     memset(&m2_ready_mirror, 0, sizeof m2_ready_mirror);
     m2_ready_mirror_valid = false;
     memset(&m2_brew_mirror, 0, sizeof m2_brew_mirror);

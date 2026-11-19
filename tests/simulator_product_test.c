@@ -142,6 +142,9 @@ static void test_m2_ready_state_survives_refresh(void)
     sim_session_add_weight(&product_session, 10);
     service();
     assert(visible("m2-ready-dose-confirm"));
+    click("m2-ready-dose-keypad");
+    lv_obj_t *draft = named("m2-ready-draft-value");
+    assert(draft && strcmp(lv_label_get_text(draft), "25.0") == 0);
     assert(product_key_consumed(SIM_KEY_LEFT));
     assert(!po_ui_m2_ready_key_left());
     service();
@@ -269,10 +272,17 @@ static void test_m2_result_flows(void)
     assert(m2_result_mirror.surface == PO_M2_RESULT_MAIN);
 
     /* Cancel clears the live reading without changing the confirmed total. */
+    m2_result_mirror.surface = PO_M2_RESULT_BYPASS;
+    m2_result_mirror.editor = PO_M2_EDITOR_KEYPAD;
     m2_result_mirror.bypass_live_decigrams = 500;
-    on_m2_result_event(&(po_m2_result_event_t){.action = PO_M2_RESULT_BYPASS_CANCEL,
-                                              .surface = PO_M2_RESULT_MAIN, .value = 0}, NULL);
+    product_view_dirty = true;
     service();
+    assert(visible("m2-result-bypass-confirm"));
+    press(SIM_KEY_RIGHT);
+    assert(product_session.page == SIM_M2_RESULT);
+    assert(product_view_dirty);
+    service();
+    assert(!visible("m2-result-bypass-confirm"));
     assert(m2_result_mirror.bypass_live_decigrams == 0);
     assert(m2_result_mirror.bypass_post_decigrams == 300);
     fill_m2_result(&view);
@@ -631,6 +641,13 @@ static void test_cli_product_previews(void)
         assert(start_product(&options, locale, &note_until));
         assert(product_started && product_session.page == options.page);
         assert(named(cases[i].root));
+        if(options.page == SIM_BREW_SETTINGS) {
+            assert(brew_settings_view.mode == 1 && visible("brew-settings-duration"));
+            click("brew-settings-mode2");
+            assert(brew_settings_view.mode == 2 && visible("brew-settings-duration"));
+            service();
+            assert(!visible("brew-settings-duration"));
+        }
         po_ui_destroy();
     }
 }
@@ -744,8 +761,10 @@ static void test_cli_settings_shares_session_host(void)
     assert(strcmp(settings_mirror.device_name, po_ui_settings_baseline.device_name) == 0);
     assert(settings_mirror.screen == PO_SET_VOLUME);
     click("settings-volume-plus1");
+    assert(has_visible_label(lv_screen_active(), "60"));
+    assert(settings_mirror.volume_percent == 61 && settings_view_dirty);
     service();
-    assert(settings_mirror.volume_percent == 61);
+    assert(has_visible_label(lv_screen_active(), "61"));
     press(SIM_KEY_LEFT);
     service();
     assert(settings_mirror.screen == PO_SET_PREFS);
@@ -757,6 +776,23 @@ static void test_cli_settings_shares_session_host(void)
     press(SIM_SWIPE_NEXT);
     press(SIM_SWIPE_NEXT);
     assert(product_session.page == SIM_SETTINGS && settings_mirror.volume_percent == 61);
+    po_ui_destroy();
+}
+
+static void test_settings_container_clear_uses_host(void)
+{
+    start_mode1_ready();
+    press(SIM_SWIPE_NEXT);
+    press(SIM_SWIPE_NEXT);
+    settings_mirror.screen = PO_SET_CONTAINER;
+    settings_mirror.container_phase = PO_SET_CONT_READY;
+    settings_mirror.live_decigrams = 1824;
+    assert(po_ui_settings_set(&settings_mirror));
+    click("settings-container-clear");
+    assert(settings_mirror.live_decigrams == 0 && settings_view_dirty);
+    assert(has_visible_label(lv_screen_active(), "182.4"));
+    service();
+    assert(has_visible_label(lv_screen_active(), "0.0"));
     po_ui_destroy();
 }
 
@@ -823,6 +859,39 @@ static void test_settings_toast_expires_off_page(void)
 }
 
 /* Ready X tare zeroes like the T key: container cleared, net zero, TARED note. */
+static void test_ready_params_echo_runs_on_host_loop(void)
+{
+    start_mode1_ready();
+    const po_ready_params_t request = {
+        .timer_mode = PO_READY_TIMER_DOWN,
+        .duration_seconds = ready_view.preset_seconds,
+        .target_enabled = false,
+        .target_grams = ready_view.target_grams,
+        .curve_enabled = false
+    };
+    ready_params_changed(&request, NULL);
+    assert(!ready_view.show_target && visible("ready-target"));
+    service();
+    assert(!visible("ready-target"));
+    po_ui_destroy();
+}
+
+static void test_m2_recipe_retry_survives_failed_refresh(void)
+{
+    start_mode1_ready();
+    press(SIM_SWIPE_NEXT);
+    assert(product_session.page == SIM_M2_READY);
+    on_m2_ready_event(&(po_m2_ready_event_t){.action = PO_M2_READY_RECIPE_RETRY,
+                                            .surface = PO_M2_READY_PICK}, NULL);
+    reject_recipes = true;
+    service();
+    assert(m2_reload_recipes && product_view_dirty);
+    reject_recipes = false;
+    service();
+    assert(!m2_reload_recipes && !product_view_dirty);
+    po_ui_destroy();
+}
+
 static void test_ready_tare_clears_container(void)
 {
     start_mode1_ready();
@@ -909,6 +978,9 @@ int main(void)
     test_cli_settings_shares_session_host();
     test_history_confirmation_returns_to_list();
     test_settings_toast_expires_off_page();
+    test_settings_container_clear_uses_host();
+    test_ready_params_echo_runs_on_host_loop();
+    test_m2_recipe_retry_survives_failed_refresh();
     test_ready_tare_clears_container();
     test_m2_preferences_share_settings();
 
