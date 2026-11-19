@@ -271,6 +271,7 @@ static void on_m2_result_event(const po_m2_result_event_t *event, void *context)
         break;
     case PO_M2_RESULT_BYPASS_CANCEL:
         m2_result_mirror.bypass_live_decigrams = 0;
+        product_view_dirty = true;
         break;
     default:
         break;

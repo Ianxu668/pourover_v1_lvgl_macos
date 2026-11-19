@@ -272,10 +272,17 @@ static void test_m2_result_flows(void)
     assert(m2_result_mirror.surface == PO_M2_RESULT_MAIN);
 
     /* Cancel clears the live reading without changing the confirmed total. */
+    m2_result_mirror.surface = PO_M2_RESULT_BYPASS;
+    m2_result_mirror.editor = PO_M2_EDITOR_KEYPAD;
     m2_result_mirror.bypass_live_decigrams = 500;
-    on_m2_result_event(&(po_m2_result_event_t){.action = PO_M2_RESULT_BYPASS_CANCEL,
-                                              .surface = PO_M2_RESULT_MAIN, .value = 0}, NULL);
+    product_view_dirty = true;
     service();
+    assert(visible("m2-result-bypass-confirm"));
+    press(SIM_KEY_RIGHT);
+    assert(product_session.page == SIM_M2_RESULT);
+    assert(product_view_dirty);
+    service();
+    assert(!visible("m2-result-bypass-confirm"));
     assert(m2_result_mirror.bypass_live_decigrams == 0);
     assert(m2_result_mirror.bypass_post_decigrams == 300);
     fill_m2_result(&view);
