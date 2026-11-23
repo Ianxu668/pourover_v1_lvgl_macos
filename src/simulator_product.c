@@ -284,6 +284,11 @@ static void poll_product_keys(const po_ui_locale_t *locale, uint32_t *note_until
     if(product_session.page == SIM_M1_READY)
         product_session.net_decigrams = ready_view.net_decigrams;
     bool weight_changed = false;
+    if(product_edge(now, count, SDL_SCANCODE_M)) {
+        bool on = !po_ui_reduced_motion_enabled();
+        po_ui_set_reduced_motion(on);
+        fprintf(stderr, "Reduced motion %s\n", on ? "on" : "off");
+    }
     if(product_edge(now, count, SDL_SCANCODE_Z)) keys[found++] = SIM_KEY_LEFT;
     if(product_edge(now, count, SDL_SCANCODE_X)) keys[found++] = SIM_KEY_RIGHT;
     if(product_edge(now, count, SDL_SCANCODE_TAB)) keys[found++] = SIM_SWIPE_NEXT;

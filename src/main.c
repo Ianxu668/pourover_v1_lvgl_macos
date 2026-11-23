@@ -247,7 +247,7 @@ int main(int argc, char **argv)
         }
         if(showing_ready && !simulator_product_started()) {
             if(options.page == SIM_PAGE_NONE) options.page = SIM_M1_READY;
-            puts("Hardware keys: Z left (start, stop, or back), X right (tare, or zero and return from a result). Tab stands in for the mode swipe: mode 1 ready, mode 2 ready, settings, then mode 1. Up/down changes weight. Mode 1 ready keeps C H [ ] T A N O R U and 1-4.");
+            puts("Hardware keys: Z left (start, stop, or back), X right (tare, or zero and return from a result). Tab stands in for the mode swipe: mode 1 ready, mode 2 ready, settings, then mode 1. Up/down changes weight. M toggles reduced motion. Mode 1 ready keeps C H [ ] T A N O R U and 1-4.");
             if(!simulator_product_start(&options, initial_language, &note_until)) {
                 fputs("Could not open the requested page.\n", stderr);
                 free(preferences_path);
