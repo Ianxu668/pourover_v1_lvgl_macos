@@ -403,6 +403,12 @@ bool m2_result_refresh(void)
     return po_ui_m2_result_set(&view);
 }
 
+/* The shared result-idle tracker asks whether a save ask is holding the page. */
+bool m2_result_save_open_state(void)
+{
+    return m2_result_mirror_valid && m2_result_mirror.save_open;
+}
+
 void m2_start(const simulator_options_t *options)
 {
     if(!m2_ready_mirror_valid) {

@@ -45,6 +45,7 @@ bool m1_brew_present(void);
 bool m1_brew_refresh(void);
 bool m1_result_present(void);
 bool m1_result_refresh(void);
+bool m1_result_save_open_state(void);
 void brew_reset(void);
 
 /* Mode 2 preferences shared with Settings; host-owned, never page-local. */
@@ -58,8 +59,17 @@ bool m2_brew_present(void);
 bool m2_brew_refresh(void);
 bool m2_result_present(void);
 bool m2_result_refresh(void);
+bool m2_result_save_open_state(void);
 void m2_start(const simulator_options_t *options);
 void m2_reset(void);
+
+/* Result-page return countdown (simulator_product.c): per-frame idle window
+ * service driving po_ui_result_return_countdown. now_ms is host time. */
+void product_result_idle_service(uint32_t now_ms, const po_ui_locale_t *locale,
+                                 uint32_t *note_until);
+/* Host-side user activity on the result page (keys, weight edits) restarts
+ * the idle window and cancels a running countdown. */
+void product_result_note_activity(void);
 
 /* Settings page (simulator_product_settings.c). */
 bool settings_present(const po_ui_locale_t *locale);

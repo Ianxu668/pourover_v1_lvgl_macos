@@ -944,6 +944,83 @@ static void test_m2_preferences_share_settings(void)
     po_ui_destroy();
 }
 
+/* Result idle window (M1X-25/M2X-49): the last 10 seconds enter the capsule,
+ * expiry returns to the mode's ready page, any key recomputes the window,
+ * and an open save ask cancels the capsule and restarts the window. */
+static void test_result_idle_window_m1(void)
+{
+    bool motion = po_ui_page_motion_enabled();
+    po_ui_set_page_motion(false); /* snap enter/exit: timing is ui-tested */
+    start_mode1_ready();
+    press(SIM_KEY_LEFT);
+    press(SIM_KEY_LEFT);
+    assert(product_session.page == SIM_M1_RESULT);
+    assert(!visible("result-return"));
+
+    product_result_idle_service(0, locale, &note_until);
+    product_result_idle_service(169999, locale, &note_until);
+    /* A backwards host clock must not invent or cancel idle time. */
+    product_result_idle_service(5000, locale, &note_until);
+    assert(!visible("result-return"));
+    product_result_idle_service(170000, locale, &note_until);
+    assert(visible("result-return"));
+
+    /* Readouts stay frozen snapshots: a routine refresh during the countdown
+       leaves the capsule and the page alone. */
+    assert(m1_result_refresh());
+    assert(visible("result-return"));
+
+    /* A key is activity: the countdown drops and the window recomputes. */
+    sim_session_add_weight(&product_session, 10);
+    product_result_note_activity();
+    assert(!visible("result-return"));
+    product_result_idle_service(170500, locale, &note_until);
+    product_result_idle_service(340000, locale, &note_until);
+    assert(visible("result-return"));
+    product_result_idle_service(350000, locale, &note_until);
+    assert(product_session.page == SIM_M1_READY);
+    assert(named("result-root") == NULL);
+    po_ui_destroy();
+    po_ui_set_page_motion(motion);
+}
+
+static void test_result_idle_window_m2(void)
+{
+    bool motion = po_ui_page_motion_enabled();
+    po_ui_set_page_motion(false); /* snap enter/exit: timing is ui-tested */
+    start_mode1_ready();
+    m2_ready_mirror.surface = PO_M2_READY_MAIN; /* earlier tests may leave a surface */
+    press(SIM_SWIPE_NEXT);
+    press(SIM_KEY_LEFT);
+    press(SIM_KEY_LEFT);
+    assert(product_session.page == SIM_M2_RESULT);
+
+    product_result_idle_service(0, locale, &note_until);
+    product_result_idle_service(171000, locale, &note_until);
+    assert(visible("m2-result-return"));
+
+    /* The save ask outranks the countdown and restarts the window. */
+    m2_result_mirror.save_open = true;
+    m2_result_mirror.surface = PO_M2_RESULT_SAVE;
+    product_view_dirty = true;
+    service();
+    product_result_idle_service(172000, locale, &note_until);
+    assert(!visible("m2-result-return"));
+
+    m2_result_mirror.save_open = false;
+    m2_result_mirror.surface = PO_M2_RESULT_MAIN;
+    product_view_dirty = true;
+    service();
+    product_result_idle_service(173000, locale, &note_until);
+    assert(!visible("m2-result-return"));
+    product_result_idle_service(343000, locale, &note_until);
+    assert(visible("m2-result-return"));
+    product_result_idle_service(353000, locale, &note_until);
+    assert(product_session.page == SIM_M2_READY);
+    po_ui_destroy();
+    po_ui_set_page_motion(motion);
+}
+
 int main(void)
 {
     simulator_product_init();
@@ -983,6 +1060,8 @@ int main(void)
     test_m2_recipe_retry_survives_failed_refresh();
     test_ready_tare_clears_container();
     test_m2_preferences_share_settings();
+    test_result_idle_window_m1();
+    test_result_idle_window_m2();
 
     lv_group_delete(group);
     lv_display_delete(display);

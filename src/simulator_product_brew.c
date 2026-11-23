@@ -241,6 +241,12 @@ bool m1_result_refresh(void)
     return po_ui_result_set(&view);
 }
 
+/* The shared result-idle tracker asks whether a save ask is holding the page. */
+bool m1_result_save_open_state(void)
+{
+    return m1_result_save_open;
+}
+
 void brew_reset(void)
 {
     host_brew_count = 0;

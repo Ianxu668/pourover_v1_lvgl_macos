@@ -68,6 +68,75 @@ static void on_preview_back(void *context)
     product_pending_page_valid = true;
 }
 
+/* Result-page return countdown (M1X-25/M2X-49). The host owns the 3-minute
+ * idle window: its last 10 seconds enter the UI capsule, expiry returns to
+ * the mode's ready page, and any key or stay request restarts the window.
+ * A save ask outranks the countdown and restarts the window so the next
+ * countdown gets a full 10 s after the ask closes. */
+#define RESULT_IDLE_MS (180u * 1000u)
+#define RESULT_COUNTDOWN_MS (10u * 1000u)
+static uint32_t result_idle_mark;
+static uint32_t result_idle_ms;
+static bool result_countdown_on;
+
+static bool result_page_live(void)
+{
+    return product_session.page == SIM_M1_RESULT || product_session.page == SIM_M2_RESULT;
+}
+
+static bool result_save_ask_open(void)
+{
+    if(product_session.page == SIM_M1_RESULT) return m1_result_save_open_state();
+    if(product_session.page == SIM_M2_RESULT) return m2_result_save_open_state();
+    return false;
+}
+
+static void result_idle_restart(void)
+{
+    result_idle_ms = 0;
+    if(result_countdown_on) {
+        result_countdown_on = false;
+        po_ui_result_return_countdown(false);
+    }
+}
+
+static void on_result_stay(void *context)
+{
+    (void)context;
+    /* The capsule dismissed itself on the touch; restart the idle window. */
+    result_countdown_on = false;
+    result_idle_ms = 0;
+}
+
+void product_result_idle_service(uint32_t now_ms, const po_ui_locale_t *locale,
+                                 uint32_t *note_until)
+{
+    if(!result_page_live()) {
+        result_idle_mark = now_ms;
+        return;
+    }
+    if(result_save_ask_open()) {
+        result_idle_restart();
+        result_idle_mark = now_ms;
+        return;
+    }
+    /* Synthetic or wrapped host clocks must not invent idle time. */
+    if(now_ms >= result_idle_mark) result_idle_ms += now_ms - result_idle_mark;
+    result_idle_mark = now_ms;
+    if(!result_countdown_on && result_idle_ms >= RESULT_IDLE_MS - RESULT_COUNTDOWN_MS) {
+        result_countdown_on = true;
+        po_ui_result_return_countdown(true);
+    }
+    else if(result_countdown_on && result_idle_ms >= RESULT_IDLE_MS) {
+        result_countdown_on = false;
+        product_session.elapsed_seconds = 0;
+        product_session.page = product_session.page == SIM_M1_RESULT
+            ? SIM_M1_READY : SIM_M2_READY;
+        if(!present_session(locale, note_until))
+            fputs("Could not open the product page.\n", stderr);
+    }
+}
+
 static void on_brew_settings_changed(const brew_settings_view_t *request, void *context)
 {
     (void)context;
@@ -80,10 +149,18 @@ static bool present_session(const po_ui_locale_t *locale, uint32_t *note_until)
     switch(product_session.page) {
     case SIM_M1_READY: return ready_present(locale, note_until);
     case SIM_M1_BREW: return m1_brew_present();
-    case SIM_M1_RESULT: return m1_result_present();
     case SIM_M2_READY: return m2_ready_present();
     case SIM_M2_BREW: return m2_brew_present();
-    case SIM_M2_RESULT: return m2_result_present();
+    case SIM_M1_RESULT:
+    case SIM_M2_RESULT:
+        if(product_session.page == SIM_M1_RESULT ? !m1_result_present() : !m2_result_present())
+            return false;
+        /* Fresh page instance: restart the idle window and arm the capsule's
+           stay request. */
+        result_countdown_on = false;
+        result_idle_ms = 0;
+        po_ui_result_set_stay_cb(on_result_stay, NULL);
+        return true;
     case SIM_SETTINGS: return settings_present(locale);
     case SIM_CONTAINER:
         if(!po_ui_show_container(NULL)) return false;
@@ -162,8 +239,16 @@ static bool product_key_consumed(sim_key_t key)
     }
 }
 
+void product_result_note_activity(void)
+{
+    if(result_page_live()) result_idle_restart();
+}
+
 static void product_handle_key(sim_key_t key, const po_ui_locale_t *locale, uint32_t *note_until)
 {
+    /* Any key is user activity: recompute the 3-minute idle window and drop
+       a running countdown (design: keys leave or reset). */
+    product_result_note_activity();
     bool consumed = product_key_consumed(key);
     sim_key_result_t result = sim_session_key(&product_session, key, consumed);
     bool weight_changed = false;
@@ -204,10 +289,12 @@ static void poll_product_keys(const po_ui_locale_t *locale, uint32_t *note_until
     if(product_edge(now, count, SDL_SCANCODE_TAB)) keys[found++] = SIM_SWIPE_NEXT;
     if(product_session.page != SIM_M1_READY && product_session.page != SIM_SETTINGS) {
         if(product_edge(now, count, SDL_SCANCODE_UP)) {
+            product_result_note_activity();
             sim_session_add_weight(&product_session, 10);
             weight_changed = true;
         }
         if(product_edge(now, count, SDL_SCANCODE_DOWN)) {
+            product_result_note_activity();
             sim_session_add_weight(&product_session, -10);
             weight_changed = true;
         }
@@ -232,6 +319,7 @@ static void poll_product_keys(const po_ui_locale_t *locale, uint32_t *note_until
         product_brew_tick = SDL_GetTicks();
         m1_brew_pour_cancel();
     }
+    product_result_idle_service(SDL_GetTicks(), locale, note_until);
 }
 
 void simulator_product_init(void)
@@ -247,6 +335,9 @@ void simulator_product_init(void)
     product_view_dirty = false;
     product_inject_valid = false;
     product_pending_page_valid = false;
+    result_idle_mark = 0;
+    result_idle_ms = 0;
+    result_countdown_on = false;
 }
 
 bool simulator_product_start(const simulator_options_t *options, const po_ui_locale_t *locale,
