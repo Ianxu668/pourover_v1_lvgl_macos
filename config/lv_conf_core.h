@@ -7,7 +7,7 @@
 
 #define LV_USE_OS LV_OS_NONE
 #define LV_USE_STDLIB_MALLOC LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE (4 * 1024 * 1024)
+#define LV_MEM_SIZE (8 * 1024 * 1024)
 #define LV_DEF_REFR_PERIOD 16
 #define LV_USE_FLOAT 0
 #define LV_USE_LOG 0
