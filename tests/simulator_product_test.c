@@ -36,6 +36,13 @@ static bool set_language(const po_ui_locale_t *language)
 #undef po_ui_m2_ready_set_cups
 #undef po_ui_set_language
 
+static void destroy_and_rebind_fonts(void)
+{
+    po_ui_destroy();
+    assert(simulator_fonts_init());
+}
+#define po_ui_destroy() destroy_and_rebind_fonts()
+
 static lv_display_t *display;
 static lv_group_t *group;
 static const po_ui_locale_t *locale;
@@ -1035,6 +1042,7 @@ int main(void)
     group = lv_group_create();
     assert(group);
     lv_group_set_default(group);
+    assert(simulator_fonts_init());
 
     test_m2_ready_state_survives_refresh();
     test_m2_brew_state();
@@ -1063,6 +1071,8 @@ int main(void)
     test_result_idle_window_m1();
     test_result_idle_window_m2();
 
+#undef po_ui_destroy
+    po_ui_destroy();
     lv_group_delete(group);
     lv_display_delete(display);
     lv_deinit();

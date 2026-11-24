@@ -139,6 +139,10 @@ int main(int argc, char **argv)
         free(preferences_path);
         return EXIT_FAILURE;
     }
+    if(!simulator_fonts_init()) {
+        free(preferences_path);
+        return EXIT_FAILURE;
+    }
     /* Pages whose show entry takes no locale (mode 2) read this selection. */
     if(!po_ui_set_language(initial_language)) {
         fprintf(stderr, "Could not select the initial language.\n");
@@ -197,7 +201,8 @@ int main(int argc, char **argv)
                 if(candidate != NULL) po_resource_pack_destroy(candidate);
                 *simulator_product_ready_view() = fallback_view;
                 fprintf(stderr, "Falling back to built-in Ready preview.\n");
-                if(!simulator_show_ready(simulator_product_ready_view(), initial_language)) {
+                if(!simulator_fonts_init() ||
+                   !simulator_show_ready(simulator_product_ready_view(), initial_language)) {
                     fprintf(stderr, "Could not create built-in mode 1 ready after resource preview fallback.\n");
                     free(preferences_path);
                     return EXIT_FAILURE;
@@ -264,7 +269,7 @@ int main(int argc, char **argv)
             lv_refr_now(display);
             bool captured = simulator_capture(options.screenshot_path);
             po_ui_destroy();
-#ifdef SIMULATOR_SHARED_FREETYPE
+#ifdef PO_UI_FREETYPE_READOUTS
             lv_draw_wait_for_finish();
 #endif
             simulator_fonts_close();

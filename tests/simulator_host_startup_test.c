@@ -7,7 +7,9 @@
 #include <string.h>
 #include <unistd.h>
 #include "lvgl/lvgl.h"
+#ifndef PO_UI_FREETYPE_READOUTS
 #include "po_ready_assets.h"
+#endif
 #include "../src/simulator_product_ready.c"
 #include "../src/simulator_product_brew.c"
 #include "../src/simulator_product_m2.c"
@@ -140,8 +142,13 @@ static void test_selected_locale_reaches_ready(char *path)
                             po_ui_locale_find("en"), path));
     assert(!showing_language && showing_ready);
     lv_obj_t *container_label = lv_obj_find_by_name(lv_screen_active(), "ready-container-label");
+#ifdef PO_UI_FREETYPE_READOUTS
+    assert(container_label && lv_obj_check_type(container_label, &lv_label_class));
+    assert(strcmp(lv_label_get_text(container_label), "容器一") == 0);
+#else
     assert(container_label && lv_obj_check_type(container_label, &lv_image_class));
     assert(lv_image_get_src(container_label) == &po_asset_container_1);
+#endif
     const po_ui_locale_t *saved = NULL;
     assert(simulator_preferences_read(path, &saved));
     assert(saved == po_ui_locale_find("zh-Hans"));
@@ -198,12 +205,16 @@ int main(void)
     assert(group);
     lv_group_set_default(group);
 
+    assert(simulator_fonts_init());
     test_boot_language_gate(missing_path);
     po_ui_destroy();
+    assert(simulator_fonts_init());
     test_save_failure_stays_on_language(missing_path);
     po_ui_destroy();
+    assert(simulator_fonts_init());
     test_selected_locale_reaches_ready(path);
     po_ui_destroy();
+    assert(simulator_fonts_init());
     test_curve_survives_language_handoff(path);
     po_ui_destroy();
 

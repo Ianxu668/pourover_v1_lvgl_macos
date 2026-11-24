@@ -49,18 +49,23 @@ int main(void)
     lv_display_set_buffers(display, pixels, NULL, sizeof pixels, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, flush);
 
+    assert(simulator_fonts_init());
+
     assert(simulator_show_language(po_ui_locale_find("en"), NULL, NULL));
-    check_glyph("Continue", 'C');
+    assert(lv_obj_find_by_name(lv_screen_active(), "language-continue"));
     lv_refr_now(display);
     assert(flushed);
-
-    assert(simulator_show_language(po_ui_locale_find("zh-Hans"), NULL, NULL));
-    check_glyph("继续", 0x7ee7);
-    lv_refr_now(display);
 
     assert(simulator_show_ready(&po_ui_ready_baseline, po_ui_locale_find("zh-Hans")));
     check_glyph("g", 'g');
     check_glyph("8", '8');
+    check_glyph("容器一", 0x5bb9);
+    flushed = 0;
+    lv_refr_now(display);
+    assert(flushed);
+
+    assert(po_ui_show_settings(NULL, po_ui_locale_find("zh-Hans")));
+    check_glyph("设置", 0x8bbe);
     flushed = 0;
     lv_refr_now(display);
     assert(flushed);
