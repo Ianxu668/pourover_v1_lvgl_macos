@@ -9,8 +9,7 @@
 
 bool simulator_fonts_init(void)
 {
-    if(!po_ui_set_freetype_readout_fonts(SIMULATOR_FREETYPE_TEXT_FONT,
-                                         SIMULATOR_FREETYPE_TEXT_FONT)) {
+    if(!po_ui_set_freetype_readout_fonts(NULL, SIMULATOR_FREETYPE_TEXT_FONT)) {
         fprintf(stderr, "Could not configure FreeType font: %s\n", SIMULATOR_FREETYPE_TEXT_FONT);
         return false;
     }
