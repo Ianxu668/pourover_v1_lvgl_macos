@@ -5,7 +5,7 @@
 - 模拟器：`Ianxu668/pourover_v1_lvgl_macos`，产品分支 `product/macos-v9.6`。
 - LVGL：`lvgl/` 子模块，指向 `Ianxu668/lvgl` 的固定提交，含 ThorVG 内存释放修复。
 - 产品 UI：`ui/` 子模块，私有仓库 `Ianxu668/pourover_ui`。
-- 固件：独立的 `pour_over_scale_v2`，本次未接入 UI 子模块、未修改源码或 SDK。
+- 固件：独立的 `pocs_v1`，以 `ap/ui` 子模块使用同一个 `Ianxu668/pourover_ui`，用自己的平台配置编译同一个 `lib-ui` 目标。产品分支上模拟器的 `ui/` 与固件 main 的 `ap/ui` 钉同一提交：先推送 ui，再同时更新两边的指针。
 
 模拟器根工程默认通过 `add_subdirectory(ui product-ui)` 构建 UI 子模块的 `lib-ui`，交互启动在 Boot 之后进入语言选择页；页面实现与静态资源只维护在 UI 私有仓库。宿主登记 Boot 退出请求，等待动画完成自身展示和退出后进入语言选择；已保存的有效语言只作为初始选中项，没有有效偏好时用英语。确认后保存偏好并进入 mode 1 ready。不再以 1500 ms 硬切换。
 
@@ -52,15 +52,9 @@ sh tests/build_scripts_test.sh  # 使用假工具检查脚本，不安装依赖�
 
 `--screen boot --screenshot <path.ppm>` 等待所选动画稳定后截取 960×376 逻辑画布，不截取起始黑场/狭缝。更细的关键帧由私有 UI 的无 SDL 测试输出。60 Hz 预览使用 16 ms LVGL 调度并检查 SDL VSYNC 请求；启动日志记录显示模式、drawable 尺寸和入场刷新间隔。日志包含设计停顿及 H 的离散解码节奏，不能将整个入场的 P95/FPS 当作连续运动或实板帧率验收。Release 关闭昂贵的对象/样式/内存完整性检查，Debug 保留它们。
 
-隔离的软件兼容性检查使用独立构建目录，不查询 SDL、不链接 ThorVG，也不复制桌面配置到固件：
+软件测试使用默认的 `build/`：`ctest --test-dir build --output-on-failure` 同时运行模拟器测试和 UI 仓库自带的测试。这些测试不等于 BK7258 交叉编译或实板验收。
 
-```sh
-cmake -S . -B build-core -G Ninja -DPO_UI_CORE_ONLY=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build build-core --parallel 8
-ctest --test-dir build-core --output-on-failure
-```
-
-该构建运行实际 LVGL 的 RGB565/A8、原生线条、动画/Timeline 和页面测试，不等于 BK7258 交叉编译或实板验收。不要在同一构建目录切换普通/核心配置。
+根工程的 `PO_UI_CORE_ONLY` 模式目前不可用。完整 UI 已要求 `PO_UI_FREETYPE_READOUTS=ON`，而该模式在接入 FreeType 之前就返回，`config/lv_conf_core.h` 也没有启用 `LV_USE_FREETYPE`，编译停在 `ui/src/ui_freetype_readouts.c` 的 `#error`。
 
 模拟器将确认后的语言保存到 SDL 的 `Mistro/PourOverScale` 偏好目录；命令行 `--language` 只提供临时初始选择。默认 UI 由私有 `ui/` 子模块提供。如需用兼容的 LVGL Pro 工程替代该子模块，可设置 `-DLVGL_PRO_PROJECT_DIR=<path>`；指定工程需提供 `lib-ui` target 及相同的 `pourover_ui.h` 启动接口。`build/`、`bin/` 不提交或跨电脑复制。每台电脑独立配置；切换编译器时使用新的构建目录。
 
